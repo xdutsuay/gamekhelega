@@ -3,8 +3,8 @@
 A game-agnostic referee for **AI-vs-AI (or human) puzzle duels**. Each side
 **makes** puzzles for the other and then **solves** the other's puzzles, under
 wall-clock limits. The referee checks everything exactly. Games are plugins. The
-first plugin is **3D Sudoku** (`sudoku3d`). A second plugin, **3D Zip** (`zip3d`),
-is designed but only stubbed.
+first plugin is **3D Sudoku** (`sudoku3d`). The second, **3D Zip** (`zip3d`), is
+implemented as well (§15).
 
 Status markers: ✅ implemented and tested on the box · 🟡 implemented but rough · ⬜ not done (see CLOUD_AGENT_BRIEF.md)
 
@@ -27,7 +27,7 @@ src/gamekhelega/
     adapters/                mock, openai (compatible HTTP), command (subprocess), human
   games/
     sudoku3d/                ✅ full plugin (rules, construct, numba + SAT solvers, generator, render)
-    zip3d/                   ⬜ stub: interface + pseudocode only
+    zip3d/                   ✅ full plugin (model, numba DFS + CP-SAT hybrid, generator, render)
 examples/minimal_game.py     ✅ template plugin (Latin square); a mock duel runs on it in tests
 research/                    experiments + logs that back the numbers below
 configs/                     duel configs (mock 4³, mock 9³, LLM example)
@@ -73,7 +73,7 @@ Unit counts (each unit must hold 1..n once):
 - **numba DFS** (`solver_numba.py`): bitmask candidates, naked and hidden singles over all units, MRV branching, an iterative stack, and seedable value order. `limit=2` counts solutions up to 2. `max_nodes` aborts. It is very fast while propagation does the work. On sparse 9³ *layer* puzzles it can blow up: pure-numba uniqueness with a 20k-node cap aborted 49 times and stalled at 111 clues after 191 s (`research/probe9*.log`).
 - **Incremental SAT** (`solver_sat.py`, pysat glucose4): the one-hot CNF (exactly-one per cell / unit / value) is built once per (n, variant), in 0.07 s for 9³. Clues are passed as **assumptions**. "Is there a 2nd solution?" adds a blocking clause guarded by a fresh activation literal, so the instance is reused for every check. It has a time limit (Timer + `interrupt`; CaDiCaL in pysat cannot be interrupted, so it uses glucose4).
 - **Hybrid** (the default everywhere): numba up to `UNIQUE_NODE_CAP=500` nodes, then SAT. A SAT timeout counts as "not unique" during generation and as `undecided` during validation.
-- **CP-SAT** (`research/solver_cpsat.py`, ortools): one-hot + `AddExactlyOne`, with a solution callback that stops at the limit. It is benchmarked only and is not a runtime dependency.
+- **CP-SAT** (`research/solver_cpsat.py`, ortools): one-hot + `AddExactlyOne`, with a solution callback that stops at the limit. For sudoku3d it is benchmarked only; zip3d uses ortools at runtime (§15).
 
 ## 5. Empirical results (box: 8 vCPU, Python 3.13, numba 0.68, pysat 1.9.dev17, ortools 9.15)
 
@@ -298,14 +298,56 @@ gamekhelega replay runs/<id> [--boards]
 gamekhelega leaderboard [-g sudoku3d]
 ```
 
-## 15. zip3d (designed, stub only)
+## 15. zip3d ✅
 
-See the module docstring in `src/gamekhelega/games/zip3d/plugin.py`.
+Rules: one Hamiltonian path through an n³ grid (n = 3..6, default 4; 6-neighbour moves). It starts on
+waypoint 1, ends on K, meets the waypoints 1..K in order and never crosses a wall. Duel puzzles must have
+exactly one such path.
 
-Rules: one Hamiltonian path through an n³ grid (6-neighbour moves). It visits numbered waypoints 1..K in order, starts on 1, ends on K, and never crosses a wall.
+JSON (1-based coordinates):
+- puzzle `{"waypoints": [[x,y,z,k],...], "walls": [[x,y,z,"+x"|"+y"|"+z"],...]}`; a wall `[x,y,z,"+x"]` blocks
+  the face between (x,y,z) and (x+1,y,z) (`"-x"` etc. accepted and normalised)
+- solution `{"path": [[x,y,z],...]}` with all n³ cells; `{"start": [x,y,z], "moves": "+x +y -z ..."}` also accepted
 
-JSON:
-- `{"waypoints": [[x,y,z,k],...], "walls": [[x,y,z,"+x"|"+y"|"+z"],...]}`
-- solution `{"path": [[x,y,z],...]}`
+Config: `{"n": 4, "walls": false, "max_walls": -1}` (walls only affect the generator; submitted puzzles may
+always contain walls; `max_walls = -1` means n). Unknown keys are rejected.
 
-`check_solution` is a linear scan. Uniqueness uses CP-SAT `AddCircuit` with a dummy node and rank variables for waypoint order (or a SAT position encoding for n ≤ 4). Generator: a serpentine path is randomized with **backbite** moves, then endpoints and a few waypoints are added. Then, while there are 2+ solutions, add a waypoint or wall where the second solution diverges, and finally greedily remove waypoints and walls that are not needed. The registry lists the stub; calling it raises NotImplementedError.
+Files (`src/gamekhelega/games/zip3d/`):
+- `model.py`: `ZipPuzzle(n, waypoints{cell: k}, walls{(a, b)})`, cell index `x + n·y + n²·z`, neighbour table.
+- `solver_dfs.py`: iterative numba DFS. Prunes: global bipartite parity, waypoint order, unvisited cells
+  stay connected, degree (every free non-end cell keeps ≥ 2 usable neighbours), the next waypoint stays
+  reachable without stepping on later ones.
+- `solver_cpsat.py`: CP-SAT `AddCircuit` over cells plus a dummy node (dummy → 1 and K → dummy fixed),
+  rank variables (`rank[v] = rank[u] + 1` on used arcs) with strictly increasing waypoint ranks; counts up
+  to `limit` by blocking found paths.
+- `generator.py`: `count()` is the hybrid: DFS up to 20k nodes, then CP-SAT with the time limit (without
+  ortools: DFS at ~1M nodes/s × limit). `generate()`: serpentine path → 20·N·⌊ln N⌋ backbite moves → N/8
+  evenly spaced waypoints → repair (while an alternative path exists, pin the first cell where it diverges,
+  or with `walls` sometimes wall that edge) → greedy waypoint removal down to a share of cells
+  (easy 0.45, medium 0.30, hard 0 = locally minimal) → greedy wall removal. Undecided checks keep the clue.
+- rating 0..10: `4·(1 − K/N) + 6·min(1, log10(1 + DFS nodes)/5)` with nodes capped at 1e6.
+- `render.py`: rich layer panels (waypoints, step numbers, links, ↑/↓ for z moves, walls); plotly cube with
+  the path as a line coloured by step, show/hide-solution buttons, slider `all` / `exploded` / layer 1..n.
+- `plugin.py`: the `PuzzleGame`, prompts/schemas/tips, human mode (`+x -y`, `goto X Y Z` extends or cuts
+  back, `undo`, `reset`, `view [K]`, `check`), partial credit = share of reference path edges present.
+
+Measured (`research/zip3d_gen.log`, `research/zip3d_solvers.log`; 8 vCPU box):
+
+| n | difficulty | budget | gen time median (max) | K median (range) | unique re-check |
+|---|---|---|---|---|---|
+| 3 | hard | 30 s | 0.01 s (0.12) | 9 (7-10) | 10/10 |
+| 3 | hard + walls | 30 s | 0.01 s (0.11) | 8 (7-10), 1.5 walls | 10/10 |
+| 3 | easy | 30 s | 0.01 s (0.15) | 12 (10-12) | 10/10 |
+| 4 | hard | 60 s | 8.1 s (34.7) | 17.5 (16-22) | 8/8 |
+| 4 | medium | 60 s | 5.6 s (11.3) | 19 (19-22) | 8/8 |
+| 4 | hard + walls | 60 s | 10.3 s (17.2) | 16.5 (15-19), 2 walls | 6/6 |
+| 5 | hard | 120 s | 126 s (127, budget hit) | 56.5 (50-77) | 4/4 |
+
+Counting to 2 on ambiguous puzzles: DFS settles 3³ instantly and 4³ in ≤ 0.6 s (up to 1.2M nodes), but
+aborts at 2M nodes on 5³/6³; CP-SAT takes 0.2 s (4³), 1.6-17 s (5³) and 43 s (6³, K = 60). Uniqueness
+proofs on generated 4³ puzzles took 0.1-9 s.
+
+Limits: 5³ generation runs out of budget during reduction, so its puzzles keep ~40-60 % of cells as
+waypoints; 6³ uniqueness checks can exceed a 30 s referee limit (`undecided`). The rating saturates around
+9 on 4³ because the DFS node count hits its cap. Duel configs therefore default to n = 4
+(`configs/duel_mock_zip4.json`: make 90 s, solve 60 s, uniqueness 30 s).

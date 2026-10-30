@@ -1,0 +1,10 @@
+# research/zip3d_solvers.py on the box (8 vCPU). Random backbite paths with K evenly spaced
+# waypoints (all turned out ambiguous): time to find 2 solutions. DFS capped at 2M nodes.
+n=3 K=6: dfs count=2 aborted=False nodes=444 0.00s | cpsat count=2 0.26s
+n=3 K=3: dfs count=2 aborted=False nodes=38 0.00s | cpsat count=2 0.03s
+n=4 K=16: dfs count=2 aborted=False nodes=330491 0.31s | cpsat count=2 0.20s
+n=4 K=10: dfs count=2 aborted=False nodes=1181718 0.58s | cpsat count=2 0.17s
+n=4 K=6: dfs count=2 aborted=False nodes=7641 0.00s | cpsat count=2 0.06s
+n=5 K=40: dfs count=0 aborted=True nodes=2000001 3.13s | cpsat count=2 1.57s
+n=5 K=20: dfs count=0 aborted=True nodes=2000001 2.04s | cpsat count=2 16.89s
+n=6 K=60: dfs count=0 aborted=True nodes=2000001 4.47s | cpsat count=2 43.04s

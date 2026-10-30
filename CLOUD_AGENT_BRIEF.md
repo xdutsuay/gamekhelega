@@ -35,7 +35,7 @@ Done and tested (do not rewrite):
 | sudoku3d plugin: rules (layer + symmetric, 4³/9³), constructions, numba + SAT hybrid uniqueness, generator, rating, JSON, human moves, terminal render | `src/gamekhelega/games/sudoku3d/*` | `tests/test_sudoku3d.py` (14 tests) |
 | CLI: games, generate, solve, check, play, duel, view, replay, leaderboard (all take `--game`) | `src/gamekhelega/cli.py` | `tests/test_cli.py` |
 | template game (Latin square) | `examples/minimal_game.py` | `test_template_game_plugs_in` |
-| zip3d: **stub only** (pseudocode docstring, raises NotImplementedError) | `games/zip3d/plugin.py` | listed by the registry. **Do not implement.** |
+| zip3d plugin: path model, numba DFS + CP-SAT uniqueness, generator (backbite + waypoint repair/reduction, optional walls), rating, JSON, human moves, terminal + plotly render | `src/gamekhelega/games/zip3d/*` | `tests/test_zip3d.py` |
 
 Rough, with work left for you: the plotly 3D view, `games/sudoku3d/render.py::render_3d`.
 
@@ -83,7 +83,7 @@ Current state: Scatter3d markers with text, frames per z-layer, and a slider. Th
 - **Do not merge.**
 
 ## 3. Out of scope (do NOT do)
-- Implement zip3d, change scoring constants or prompts, swap solvers, add web servers or databases, or add dependencies beyond plotly (already an extra).
+- Change scoring constants or prompts, swap solvers, add web servers or databases, or add dependencies beyond plotly (already an extra) and ortools (core since zip3d).
 - Run benchmarks. Numbers are in DESIGN.md §5 and `research/*.log`.
 - Rename or reorganize the package.
 
