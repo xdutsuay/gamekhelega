@@ -1,0 +1,13 @@
+{
+  "game": "zip3d",
+  "game_config": {"n": 4, "walls": false},
+  "puzzles_per_side": 3,
+  "make_time_s": 90,
+  "solve_time_s": 60,
+  "uniqueness_time_s": 30,
+  "seed": 1,
+  "out_dir": "runs",
+  "leaderboard": "runs/leaderboard.json",
+  "player_a": {"type": "mock", "id": "mock-strong", "skill": 1.0, "difficulty": "hard", "seed": 1},
+  "player_b": {"type": "mock", "id": "mock-sloppy", "skill": 0.6, "bad_make": 0.3, "difficulty": "medium", "seed": 2}
+}
