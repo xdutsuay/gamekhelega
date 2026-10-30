@@ -1,0 +1,7 @@
+layer seed=0 tried=100 clues=629 aborted=0 max_nodes=0 t=0.0s
+layer seed=0 tried=200 clues=529 aborted=0 max_nodes=0 t=0.0s
+layer seed=0 tried=300 clues=429 aborted=0 max_nodes=0 t=0.0s
+layer seed=0 tried=400 clues=329 aborted=0 max_nodes=0 t=0.1s
+layer seed=0 tried=500 clues=229 aborted=0 max_nodes=0 t=0.1s
+layer seed=0 tried=600 clues=136 aborted=0 max_nodes=3 t=0.1s
+layer seed=0 tried=700 clues=111 aborted=49 max_nodes=20001 t=190.9s

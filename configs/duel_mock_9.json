@@ -1,0 +1,12 @@
+{
+  "game": "sudoku3d",
+  "game_config": {"n": 9, "variant": "layer"},
+  "puzzles_per_side": 2,
+  "make_time_s": 120,
+  "solve_time_s": 120,
+  "uniqueness_time_s": 180,
+  "out_dir": "runs",
+  "leaderboard": "runs/leaderboard.json",
+  "player_a": {"type": "mock", "id": "mock-a", "skill": 1.0, "difficulty": "medium", "seed": 1, "make_time_budget": 20},
+  "player_b": {"type": "mock", "id": "mock-b", "skill": 0.5, "difficulty": "medium", "seed": 2, "make_time_budget": 20}
+}

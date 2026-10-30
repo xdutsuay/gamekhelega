@@ -1,0 +1,1 @@
+{"numba_cap": 100000, "variant": "layer", "difficulty": "hard", "i": 0, "clues": 105, "gen_s": 271.72, "numba": {"count": 0, "aborted": true, "nodes": 100001, "s": 20.1077}, "pysat_glucose4": {"count": 1, "s": 89.7402, "build_s": 0.052}, "cpsat_1worker_incl_build": {"count": 1, "s": 26.668}}
