@@ -1,0 +1,8 @@
+symmetric seed=0 tried=100 clues=629 aborted=0 max_nodes=0 t=0.0s
+symmetric seed=0 tried=200 clues=529 aborted=0 max_nodes=0 t=0.0s
+symmetric seed=0 tried=300 clues=429 aborted=0 max_nodes=0 t=0.1s
+symmetric seed=0 tried=400 clues=329 aborted=0 max_nodes=0 t=0.1s
+symmetric seed=0 tried=500 clues=229 aborted=0 max_nodes=0 t=0.1s
+symmetric seed=0 tried=600 clues=129 aborted=0 max_nodes=0 t=0.1s
+symmetric seed=0 tried=700 clues=48 aborted=2 max_nodes=20001 t=40.5s
+symmetric seed=0 tried=729 clues=47 aborted=8 max_nodes=20001 t=89.6s

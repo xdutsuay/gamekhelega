@@ -1,0 +1,1 @@
+{"variant": "symmetric", "difficulty": "hard", "i": 0, "clues": 39, "gen_s": 22.3, "numba": {"count": 0, "aborted": true, "nodes": 2000001, "s": 378.9002}, "pysat_glucose4": {"count": 1, "s": 2.3124, "build_s": 0.087}, "cpsat_1worker_incl_build": {"count": 1, "s": 2.284}}

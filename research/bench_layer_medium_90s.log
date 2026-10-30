@@ -1,0 +1,2 @@
+{"numba_cap": 100000, "variant": "layer", "difficulty": "medium", "i": 0, "clues": 218, "gen_s": 0.15, "numba": {"count": 1, "aborted": false, "nodes": 0, "s": 0.0003}, "pysat_glucose4": {"count": 1, "s": 0.0035, "build_s": 0.048}, "cpsat_1worker_incl_build": {"count": 1, "s": 0.035}}
+{"numba_cap": 100000, "variant": "layer", "difficulty": "medium", "i": 1, "clues": 218, "gen_s": 0.14, "numba": {"count": 1, "aborted": false, "nodes": 0, "s": 0.0004}, "pysat_glucose4": {"count": 1, "s": 0.0026, "build_s": 0.048}, "cpsat_1worker_incl_build": {"count": 1, "s": 0.031}}

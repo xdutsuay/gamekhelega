@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gamekhelega"
+version = "0.1.0"
+description = "Game-agnostic AI-vs-AI puzzle duel engine with pluggable games (3D Sudoku first)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+  "numpy>=1.26",
+  "numba>=0.59",
+  "python-sat>=1.8.dev0",
+  "rich>=13",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+viz = ["plotly>=5.20"]
+research = ["ortools>=9.10"]
+dev = ["pytest>=8", "plotly>=5.20"]
+
+[project.scripts]
+gamekhelega = "gamekhelega.cli:app"
+
+# Third-party games register here (built-ins are discovered from gamekhelega.games.*):
+# [project.entry-points."gamekhelega.games"]
+# latin = "my_pkg.latin:GAME"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gamekhelega"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]

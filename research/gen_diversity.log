@@ -1,0 +1,8 @@
+(a) layer: empty-restarts success 0/20 @3000 nodes, 3.5s total
+(b) layer blank 0.5: solved 10/10, differs-from-base 0/10, 0.001s each
+(b) layer blank 0.7: solved 10/10, differs-from-base 2/10, 0.001s each
+(b) layer blank 0.85: solved 1/10, differs-from-base 1/10, 0.357s each
+(a) symmetric: empty-restarts success 0/20 @3000 nodes, 2.0s total
+(b) symmetric blank 0.5: solved 10/10, differs-from-base 0/10, 0.001s each
+(b) symmetric blank 0.7: solved 10/10, differs-from-base 0/10, 0.001s each
+(b) symmetric blank 0.85: solved 10/10, differs-from-base 1/10, 0.001s each

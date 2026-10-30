@@ -1,0 +1,2 @@
+{"n": 4, "variant": "layer", "runs": 200, "min_clues": 5, "median": 8.0, "max": 11, "mean_time_s": 0.002, "median_nodes": 0.0}
+{"n": 4, "variant": "symmetric", "runs": 200, "min_clues": 4, "median": 5.0, "max": 7, "mean_time_s": 0.002, "median_nodes": 0.0}
