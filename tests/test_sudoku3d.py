@@ -104,4 +104,38 @@ def test_renderers():
     con.print(GAME.render_terminal(cfg, p, s))
     assert "givens" in con.export_text()
     fig = GAME.render_3d(cfg, p, s)
-    assert len(fig.frames) == 4
+    assert len(fig.frames) == 0  # views switch via slider/dropdown "update" calls, no frames
+    assert len(fig.layout.sliders[0].steps) == 4 + 2  # all, exploded, 1..n
+    assert [d.name for d in fig.data] == ["given", "filled", "empty"]
+
+
+def test_render_3d_viewer_n9(tmp_path):
+    cfg = GAME.parse_config({"n": 9})
+    sol = base_grid(cfg)
+    puz = sol.copy()
+    puz.ravel()[np.random.default_rng(1).permutation(puz.size)[:600]] = 0
+    fig = GAME.render_3d(cfg, puz, sol)
+    steps = fig.layout.sliders[0].steps
+    assert len(steps) >= 10 and [s.label for s in steps[:3]] == ["all", "exploded", "1"]
+    menus = {m.name: m for m in fig.layout.updatemenus}
+    assert [b.label for b in menus["slice axis"].buttons] == ["z-layers", "y-slices", "x-slices"]
+    assert "filled toggle" in menus
+    # every cell appears exactly once in the "all" view, split by status
+    given, filled, empty = fig.data
+    assert len(given.x) == int((puz > 0).sum()) and len(filled.x) == 600 and len(empty.x) == 0
+    assert "given" in given.hovertemplate and "filled" in filled.hovertemplate
+    # one slice per frame, 1-based coordinates in hover data
+    x_steps = menus["slice axis"].buttons[2].args[1]["sliders"][0]["steps"]
+    upd = next(s for s in x_steps if s["label"] == "3")["args"][0]
+    assert sum(len(xs) for xs in upd["x"]) == 81
+    assert all(c[0] == 3 for cd in upd["customdata"] for c in cd)
+    exploded = next(s for s in x_steps if s["label"] == "exploded")["args"][1]
+    assert exploded["scene.xaxis.ticktext"] == [str(i) for i in range(1, 10)]
+    assert exploded["scene.xaxis.tickvals"][1] > 2  # slices spread apart
+    assert list(fig.layout.scene.xaxis.ticktext) == [str(i) for i in range(1, 10)]
+    # puzzle-only view: empties shown, no filled toggle
+    fig2 = GAME.render_3d(cfg, puz)
+    assert len(fig2.data[2].x) == 600 and len(fig2.layout.updatemenus) == 1
+    out = tmp_path / "cube.html"
+    fig.write_html(str(out), include_plotlyjs="cdn")
+    assert out.stat().st_size < 5 * 1024 * 1024

@@ -56,41 +56,131 @@ def render_terminal(cfg: Rules, puzzle, solution=None, state=None):
     return tbl
 
 
+GIVEN_COLOR = "#111827"    # near-black
+FILLED_COLOR = "#2563eb"   # blue
+EMPTY_COLOR = "#9ca3af"    # grey
+EXPLODE_GAP = 1.5          # extra spacing between slices in the exploded view
+
+
+def _view_cells(n: int, axis: str, mode: str, k: int | None = None):
+    """Cells shown in one view as 0-based (z, y, x) index arrays, plus plotted positions.
+
+    mode: "all" (whole cube), "exploded" (whole cube, slices spread along `axis`),
+    "slice" (only slice k along `axis`)."""
+    zz, yy, xx = (a.ravel() for a in np.indices((n, n, n)))
+    coord = {"z": zz, "y": yy, "x": xx}
+    sel = np.ones(zz.shape, dtype=bool) if mode != "slice" else (coord[axis] == k)
+    pos = {a: coord[a][sel].astype(float) + 1 for a in "zyx"}
+    if mode == "exploded":
+        pos[axis] = coord[axis][sel] * (1 + EXPLODE_GAP) + 1
+    return zz[sel], yy[sel], xx[sel], pos
+
+
+def _axis_layout(n: int, axis: str, mode: str) -> dict:
+    """Scene axes: labelled x/y/z, 1-based ticks, fixed ranges (stable camera between frames)."""
+    ticks = list(range(1, n + 1))
+    scene = {}
+    for a in "xyz":
+        vals = ticks
+        if mode == "exploded" and a == axis:
+            vals = [k * (1 + EXPLODE_GAP) + 1 for k in range(n)]
+        scene[f"{a}axis"] = dict(title=a, tickvals=vals, ticktext=[str(t) for t in ticks],
+                                 range=[0.5, vals[-1] + 0.5], autorange=False)
+    scene["aspectmode"] = "manual"
+    scene["aspectratio"] = {a: (1.6 if mode == "exploded" and a == axis else 1.0) for a in "xyz"}
+    return scene
+
+
 def render_3d(cfg: Rules, puzzle, solution=None):
-    """Plotly figure: cube of numbered markers (givens large/opaque, solved cells small),
-    a slider isolates one z-layer. Returns plotly.graph_objects.Figure."""
+    """Interactive plotly cube.
+
+    - Traces: givens (dark, large), solver-filled cells (blue; only when `solution` is given),
+      empty cells (faint small grey markers).
+    - Dropdown "slice axis": z-layers / y-slices / x-slices.
+    - Slider: ``all``, ``exploded`` (slices spread apart along the axis), then one slice ``1..n``.
+    - With a solution, a toggle shows/hides the filled cells.
+    - Hover: ``x, y, z = value (given|filled|empty)`` with 1-based coordinates.
+    Views switch via plotly "update" calls (no animation frames), so the exported HTML opens
+    on the whole cube instead of auto-playing through frames.
+    Returns plotly.graph_objects.Figure."""
     import plotly.graph_objects as go
 
-    grid = np.asarray(solution if solution is not None else puzzle)
-    givens = np.asarray(puzzle) > 0
-    z, y, x = np.nonzero(grid > 0)
-    vals = grid[z, y, x]
-    is_g = givens[z, y, x]
+    n = cfg.n
+    puzzle = np.asarray(puzzle)
+    grid = np.asarray(solution) if solution is not None else puzzle
+    givens = puzzle > 0
+    filled = (grid > 0) & ~givens
+    has_filled = solution is not None
+    kinds = [("given", givens), ("filled", filled), ("empty", grid == 0)]
 
-    def trace(mask, name, size, opacity):
-        return go.Scatter3d(
-            x=x[mask] + 1, y=y[mask] + 1, z=z[mask] + 1, mode="markers+text", name=name,
-            text=[ALPHABET[v - 1] for v in vals[mask]], textfont=dict(size=10),
-            marker=dict(size=size, color=vals[mask], colorscale="Turbo", cmin=1, cmax=cfg.n,
-                        opacity=opacity), hovertemplate="x=%{x} y=%{y} z=%{z} v=%{text}")
+    def view_data(axis: str, mode: str, k: int | None = None) -> list[dict]:
+        zi, yi, xi, pos = _view_cells(n, axis, mode, k)
+        out = []
+        for status, mask in kinds:
+            m = mask[zi, yi, xi]
+            v = grid[zi[m], yi[m], xi[m]]
+            label = [ALPHABET[int(t) - 1] if t else "·" for t in v]
+            out.append(dict(
+                x=pos["x"][m].tolist(), y=pos["y"][m].tolist(), z=pos["z"][m].tolist(),
+                text=label if status != "empty" else None,
+                customdata=[[int(a) + 1, int(b) + 1, int(c) + 1, lab]
+                            for a, b, c, lab in zip(xi[m], yi[m], zi[m], label)]))
+        return out
 
-    def traces(layer):
-        sel = np.ones_like(z, dtype=bool) if layer is None else (z == layer)
-        return [trace(sel & is_g, "givens", 7, 0.95), trace(sel & ~is_g, "filled", 4, 0.5)]
+    hover = "x, y, z = %{customdata[0]}, %{customdata[1]}, %{customdata[2]} = %{customdata[3]} (STATUS)<extra></extra>"
+    styles = {
+        "given": dict(mode="markers+text", marker=dict(size=7, color=GIVEN_COLOR, opacity=0.95),
+                      textfont=dict(size=13, color=GIVEN_COLOR, family="Arial Black, Arial, sans-serif")),
+        "filled": dict(mode="markers+text", marker=dict(size=4, color=FILLED_COLOR, opacity=0.6),
+                       textfont=dict(size=11, color=FILLED_COLOR)),
+        "empty": dict(mode="markers", marker=dict(size=2, color=EMPTY_COLOR, opacity=0.25)),
+    }
 
-    fig = go.Figure(data=traces(None))
-    fig.frames = [go.Frame(data=traces(k), name=str(k + 1)) for k in range(cfg.n)]
-    steps = [dict(method="animate", label="all", args=[[None], dict(mode="immediate")])]
-    steps = [dict(method="animate", label=str(k + 1),
-                  args=[[str(k + 1)], dict(mode="immediate", frame=dict(duration=0, redraw=True))])
-             for k in range(cfg.n)]
+    def step_names(axis):
+        return ["all", "exploded"] + [str(k + 1) for k in range(n)]
+
+    def view_update(axis: str, key: str) -> list:
+        """args for a plotly "update" call: new trace data + axis layout as dotted keys
+        (dotted keys keep the user's camera; no frames, so write_html's auto_play has nothing to play)."""
+        mode = key if key in ("all", "exploded") else "slice"
+        data = view_data(axis, mode, int(key) - 1 if mode == "slice" else None)
+        lay = {f"scene.{ax}.{k}": v for ax, d in _axis_layout(n, axis, mode).items()
+               if isinstance(d, dict) for k, v in d.items()}
+        return [{f: [t[f] for t in data] for f in ("x", "y", "z", "text", "customdata")}, lay]
+
+    initial = view_data("z", "all")
+    fig = go.Figure(data=[go.Scatter3d(name=status, hovertemplate=hover.replace("STATUS", status),
+                                       visible=True if (status != "filled" or has_filled) else "legendonly",
+                                       **styles[status], **d)
+                          for (status, _), d in zip(kinds, initial)])
+
+    axis_title = {"z": "z-layer", "y": "y-slice", "x": "x-slice"}
+
+    def slider(axis: str) -> dict:
+        steps = [dict(method="update", label=key, args=view_update(axis, key)) for key in step_names(axis)]
+        return dict(active=0, currentvalue=dict(prefix=f"{axis_title[axis]}: "), steps=steps,
+                    pad=dict(t=30), len=0.9, x=0.05)
+
+    sliders = {axis: slider(axis) for axis in ("z", "y", "x")}
+    axis_buttons = []
+    for axis in ("z", "y", "x"):
+        data_upd, lay = view_update(axis, "all")
+        axis_buttons.append(dict(label=f"{axis_title[axis]}s", method="update",
+                                 args=[data_upd, {**lay, "sliders": [sliders[axis]]}]))
+    menus = [dict(type="dropdown", name="slice axis", direction="down", x=0.0, y=1.0,
+                  xanchor="left", yanchor="bottom", showactive=True, active=0, buttons=axis_buttons)]
+    if has_filled:
+        menus.append(dict(type="buttons", name="filled toggle", direction="right", x=0.2, y=1.0,
+                          xanchor="left", yanchor="bottom", showactive=True, active=0, buttons=[
+                              dict(label="show filled", method="restyle", args=[{"visible": True}, [1]]),
+                              dict(label="hide filled", method="restyle", args=[{"visible": False}, [1]]),
+                          ]))
+
+    givens_n, filled_n = int(givens.sum()), int(filled.sum())
     fig.update_layout(
-        title=f"3D Sudoku {cfg.n}³ ({cfg.variant})",
-        scene=dict(xaxis_title="x", yaxis_title="y", zaxis_title="z", aspectmode="cube"),
-        sliders=[dict(active=0, currentvalue=dict(prefix="z-layer "), steps=steps)],
-        updatemenus=[dict(type="buttons", showactive=False, buttons=[dict(
-            label="all layers", method="update", args=[{"x": [d.x for d in fig.data],
-                                                       "y": [d.y for d in fig.data],
-                                                       "z": [d.z for d in fig.data],
-                                                       "text": [d.text for d in fig.data]}])])])
+        title=dict(text=f"3D Sudoku {n}³ ({cfg.variant}): {givens_n} givens"
+                   + (f", {filled_n} filled" if has_filled else ""), x=0.5, xanchor="center", y=0.98),
+        scene=_axis_layout(n, "z", "all"),
+        sliders=[sliders["z"]], updatemenus=menus,
+        legend=dict(itemsizing="constant"), margin=dict(l=0, r=0, t=100, b=0))
     return fig
