@@ -1,4 +1,5 @@
 import json
+import sys
 
 import numpy as np
 import pytest
@@ -92,7 +93,7 @@ def test_command_adapter(tmp_path):
     bot = tmp_path / "bot.py"
     bot.write_text("import json,sys; r=json.load(sys.stdin); print(json.dumps({'echo': r['phase']}))")
     g = get_game("sudoku3d")
-    rep = CommandPlayer(["python", str(bot)]).act(make_request(g, g.parse_config({"n": 4}), 1, 10))
+    rep = CommandPlayer([sys.executable, str(bot)]).act(make_request(g, g.parse_config({"n": 4}), 1, 10))
     assert rep.data == {"echo": "make"} and not rep.error
 
 
