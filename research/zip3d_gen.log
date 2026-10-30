@@ -1,0 +1,59 @@
+# research/zip3d_stats.py on the box (8 vCPU, Python 3.13, numba 0.68, ortools 9.15), 2026-10-30.
+# Columns: generation wall time, waypoints K (share of cells), walls, re-check of uniqueness with the
+# hybrid counter, rating, DFS nodes used by the rating (capped at 1e6).
+# TARGET_FRAC = easy 0.45 / medium 0.30 / hard 0.0 (minimal). The n=3 easy run was redone after this
+# change (summary only); its earlier per-seed lines were with the old 0.20 target and are omitted.
+
+n=3 hard walls=False seed=0: gen 0.12s K=9 (33%) walls=0 unique_recheck=1 (0.00s) rate=6.33 dfs_nodes=1135
+n=3 hard walls=False seed=1: gen 0.01s K=9 (33%) walls=0 unique_recheck=1 (0.00s) rate=6.15 dfs_nodes=803
+n=3 hard walls=False seed=2: gen 0.02s K=7 (26%) walls=0 unique_recheck=1 (0.00s) rate=7.6 dfs_nodes=7381
+n=3 hard walls=False seed=3: gen 0.01s K=10 (37%) walls=0 unique_recheck=1 (0.00s) rate=6.06 dfs_nodes=896
+n=3 hard walls=False seed=4: gen 0.01s K=8 (30%) walls=0 unique_recheck=1 (0.00s) rate=6.6 dfs_nodes=1414
+n=3 hard walls=False seed=5: gen 0.01s K=8 (30%) walls=0 unique_recheck=1 (0.00s) rate=6.38 dfs_nodes=936
+n=3 hard walls=False seed=6: gen 0.02s K=8 (30%) walls=0 unique_recheck=1 (0.00s) rate=7.18 dfs_nodes=4382
+n=3 hard walls=False seed=7: gen 0.01s K=10 (37%) walls=0 unique_recheck=1 (0.00s) rate=5.48 dfs_nodes=292
+n=3 hard walls=False seed=8: gen 0.01s K=9 (33%) walls=0 unique_recheck=1 (0.00s) rate=6.44 dfs_nodes=1381
+n=3 hard walls=False seed=9: gen 0.01s K=10 (37%) walls=0 unique_recheck=1 (0.00s) rate=5.55 dfs_nodes=332
+SUMMARY n=3 hard walls=False budget=30.0s samples=10: gen median 0.01s max 0.12s | K median 9.0 range 7-10 | walls mean 0.0 | rate median 6.355 | unique 10/10
+n=3 hard walls=True seed=0: gen 0.11s K=8 (30%) walls=1 unique_recheck=1 (0.00s) rate=6.35 dfs_nodes=880
+n=3 hard walls=True seed=1: gen 0.01s K=8 (30%) walls=2 unique_recheck=1 (0.00s) rate=5.68 dfs_nodes=244
+n=3 hard walls=True seed=2: gen 0.02s K=7 (26%) walls=2 unique_recheck=1 (0.00s) rate=7.46 dfs_nodes=5638
+n=3 hard walls=True seed=3: gen 0.01s K=10 (37%) walls=1 unique_recheck=1 (0.00s) rate=5.32 dfs_nodes=213
+n=3 hard walls=True seed=4: gen 0.01s K=8 (30%) walls=2 unique_recheck=1 (0.00s) rate=6.38 dfs_nodes=936
+n=3 hard walls=True seed=5: gen 0.01s K=8 (30%) walls=0 unique_recheck=1 (0.00s) rate=6.75 dfs_nodes=1912
+n=3 hard walls=True seed=6: gen 0.01s K=7 (26%) walls=0 unique_recheck=1 (0.00s) rate=7.37 dfs_nodes=4708
+n=3 hard walls=True seed=7: gen 0.01s K=9 (33%) walls=2 unique_recheck=1 (0.00s) rate=5.94 dfs_nodes=530
+n=3 hard walls=True seed=8: gen 0.01s K=7 (26%) walls=3 unique_recheck=1 (0.00s) rate=6.22 dfs_nodes=521
+n=3 hard walls=True seed=9: gen 0.01s K=9 (33%) walls=2 unique_recheck=1 (0.00s) rate=5.41 dfs_nodes=194
+SUMMARY n=3 hard walls=True budget=30.0s samples=10: gen median 0.01s max 0.11s | K median 8.0 range 7-10 | walls mean 1.5 | rate median 6.285 | unique 10/10
+n=4 hard walls=False seed=0: gen 34.74s K=17 (27%) walls=0 unique_recheck=1 (9.07s) rate=8.94 dfs_nodes=1000000
+n=4 hard walls=False seed=1: gen 14.28s K=16 (25%) walls=0 unique_recheck=1 (1.10s) rate=9.0 dfs_nodes=1000000
+n=4 hard walls=False seed=2: gen 7.48s K=18 (28%) walls=0 unique_recheck=1 (0.27s) rate=8.88 dfs_nodes=1000000
+n=4 hard walls=False seed=3: gen 8.70s K=17 (27%) walls=0 unique_recheck=1 (0.45s) rate=8.94 dfs_nodes=1000000
+n=4 hard walls=False seed=4: gen 4.17s K=22 (34%) walls=0 unique_recheck=1 (0.23s) rate=8.62 dfs_nodes=175200
+n=4 hard walls=False seed=5: gen 7.40s K=17 (27%) walls=0 unique_recheck=1 (0.46s) rate=8.94 dfs_nodes=1000000
+n=4 hard walls=False seed=6: gen 9.34s K=20 (31%) walls=0 unique_recheck=1 (0.31s) rate=8.75 dfs_nodes=1000000
+n=4 hard walls=False seed=7: gen 4.60s K=21 (33%) walls=0 unique_recheck=1 (0.10s) rate=8.69 dfs_nodes=1000000
+SUMMARY n=4 hard walls=False budget=60.0s samples=8: gen median 8.09s max 34.74s | K median 17.5 range 16-22 | walls mean 0.0 | rate median 8.91 | unique 8/8
+n=4 medium walls=False seed=0: gen 7.01s K=19 (30%) walls=0 unique_recheck=1 (2.63s) rate=8.81 dfs_nodes=1000000
+n=4 medium walls=False seed=1: gen 11.26s K=19 (30%) walls=0 unique_recheck=1 (0.90s) rate=8.81 dfs_nodes=1000000
+n=4 medium walls=False seed=2: gen 5.78s K=19 (30%) walls=0 unique_recheck=1 (0.25s) rate=8.81 dfs_nodes=1000000
+n=4 medium walls=False seed=3: gen 5.21s K=19 (30%) walls=0 unique_recheck=1 (0.53s) rate=8.81 dfs_nodes=1000000
+n=4 medium walls=False seed=4: gen 4.37s K=21 (33%) walls=0 unique_recheck=1 (0.13s) rate=8.69 dfs_nodes=667112
+n=4 medium walls=False seed=5: gen 5.47s K=19 (30%) walls=0 unique_recheck=1 (0.18s) rate=8.81 dfs_nodes=1000000
+n=4 medium walls=False seed=6: gen 6.61s K=20 (31%) walls=0 unique_recheck=1 (0.90s) rate=8.75 dfs_nodes=1000000
+n=4 medium walls=False seed=7: gen 4.93s K=22 (34%) walls=0 unique_recheck=1 (0.23s) rate=8.62 dfs_nodes=1000000
+SUMMARY n=4 medium walls=False budget=60.0s samples=8: gen median 5.63s max 11.26s | K median 19.0 range 19-22 | walls mean 0.0 | rate median 8.81 | unique 8/8
+n=4 hard walls=True seed=0: gen 14.99s K=15 (23%) walls=2 unique_recheck=1 (4.14s) rate=9.06 dfs_nodes=1000000
+n=4 hard walls=True seed=1: gen 17.24s K=16 (25%) walls=2 unique_recheck=1 (2.08s) rate=9.0 dfs_nodes=1000000
+n=4 hard walls=True seed=2: gen 8.95s K=17 (27%) walls=2 unique_recheck=1 (0.89s) rate=8.94 dfs_nodes=1000000
+n=4 hard walls=True seed=3: gen 11.57s K=15 (23%) walls=3 unique_recheck=1 (0.71s) rate=9.06 dfs_nodes=1000000
+n=4 hard walls=True seed=4: gen 4.65s K=19 (30%) walls=2 unique_recheck=1 (0.13s) rate=8.81 dfs_nodes=1000000
+n=4 hard walls=True seed=5: gen 7.55s K=17 (27%) walls=1 unique_recheck=1 (0.50s) rate=8.94 dfs_nodes=1000000
+SUMMARY n=4 hard walls=True budget=60.0s samples=6: gen median 10.26s max 17.24s | K median 16.5 range 15-19 | walls mean 2.0 | rate median 8.969999999999999 | unique 6/6
+n=5 hard walls=False seed=0: gen 126.05s K=77 (62%) walls=0 unique_recheck=1 (0.01s) rate=5.82 dfs_nodes=3707
+n=5 hard walls=False seed=1: gen 126.41s K=53 (42%) walls=0 unique_recheck=1 (0.21s) rate=8.3 dfs_nodes=298116
+n=5 hard walls=False seed=2: gen 127.22s K=60 (48%) walls=0 unique_recheck=1 (0.17s) rate=7.94 dfs_nodes=76339
+n=5 hard walls=False seed=3: gen 124.77s K=50 (40%) walls=0 unique_recheck=1 (0.18s) rate=8.4 dfs_nodes=1000000
+SUMMARY n=5 hard walls=False budget=120.0s samples=4: gen median 126.23s max 127.22s | K median 56.5 range 50-77 | walls mean 0.0 | rate median 8.120000000000001 | unique 4/4
+SUMMARY n=3 easy walls=False budget=30.0s samples=10: gen median 0.01s max 0.15s | K median 12.0 range 10-12 | walls mean 0.0 | rate median 4.84 | unique 10/10

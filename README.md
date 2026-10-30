@@ -4,19 +4,21 @@
 
 Each side **makes** puzzles for its opponent, then **solves** the opponent's puzzles under wall-clock limits.
 A referee checks every puzzle for rule validity and a **unique** solution, grades the answers, scores the duel,
-and updates per-game Elo ratings. Games are plugins. The first one is **3D Sudoku** (9×9×9: every line along
-x, y and z holds 1-9, and every layer is a sudoku).
+and updates per-game Elo ratings. Games are plugins: **3D Sudoku** (9×9×9: every line along x, y and z holds 1-9, and every layer is a
+sudoku) and **3D Zip** (one path through every cell of an n×n×n cube, through numbered waypoints in order).
 
 ## Quickstart
 
 ```bash
 pip install -e ".[dev]"             # Python >= 3.10
-pytest -q                           # ~30 tests, a few seconds after numba warm-up
+pytest -q                           # ~47 tests, ~20 s after numba warm-up
 gamekhelega games
 gamekhelega duel configs/duel_mock_4.json        # full duel with mock players, no API key
 gamekhelega generate -g sudoku3d -p n=9 --difficulty medium --count 2 --out pack.json
 gamekhelega check pack.json && gamekhelega view pack.json --solution --html cube.html
 gamekhelega play -g sudoku3d -p n=4              # play in the terminal (human mode)
+gamekhelega duel configs/duel_mock_zip4.json     # same, 3D Zip on a 4x4x4 cube
+gamekhelega play -g zip3d -p n=3                 # 3D Zip in the terminal
 gamekhelega leaderboard                          # Elo per game, from runs/leaderboard.json
 ```
 
@@ -106,8 +108,31 @@ gamekhelega duel configs/duel_mock_4.json --b '{"type": "command", "id": "my-bot
 
 Games are plugins discovered from `gamekhelega.games.*` or the `gamekhelega.games` entry point; the engine
 has no game-specific code. See [DESIGN.md §7](DESIGN.md#7-how-to-add-a-new-game) and the complete template
-[examples/minimal_game.py](examples/minimal_game.py) (an n×n Latin square). 3D Zip (`games/zip3d`) is the next
-planned game and is currently a stub.
+[examples/minimal_game.py](examples/minimal_game.py) (an n×n Latin square). `games/zip3d` is a second
+full example that uses a different solver stack (DFS + CP-SAT) behind the same interface.
+
+## 3D Zip (`zip3d`)
+
+An n×n×n grid (n = 3..6, default 4) with numbered waypoints 1..K and optional walls. Draw **one** path that
+visits every cell exactly once, moving only between face-adjacent cells (±x, ±y, ±z), starting on 1,
+ending on K and meeting the waypoints in increasing order, never crossing a wall. Duel puzzles must have
+exactly one such path.
+
+```json
+puzzle:   {"waypoints": [[1,1,1,1], [3,2,1,2], ...], "walls": [[2,1,1,"+x"], ...]}
+solution: {"path": [[1,1,1], [2,1,1], ...]}          (all n³ cells; {"start":[x,y,z],"moves":"+x +y -z ..."} also accepted)
+```
+
+```bash
+gamekhelega generate -g zip3d -p n=4 -p walls=true --difficulty hard --out zip.json
+gamekhelega view zip.json --solution --html zip.html   # path as a 3D line coloured by step, layer slider
+gamekhelega play -g zip3d -p n=3                         # moves: "+x -y +z", "goto X Y Z", undo, view 2, check
+```
+
+The referee proves uniqueness with a pruned depth-first search (numba) and hands hard cases to an OR-Tools
+CP-SAT model (`AddCircuit` + order constraints), so `ortools` is a core dependency. Measured on the box
+(`research/zip3d_gen.log`): 3³ puzzles generate in ~0.01 s, 4³ in ~5-35 s; 5³ is slow and 6³ uniqueness
+proofs can time out (counted as `undecided`), so duels default to n = 4.
 
 ## Scoring
 
