@@ -23,8 +23,9 @@ class Player(ABC):
 
     @abstractmethod
     def act(self, req: Request) -> Reply:
-        """Blocking call. Must try to return within req.time_limit_s; the referee
-        enforces the limit regardless (late replies are discarded)."""
+        """Blocking call. Must try to return within req.time_limit_s and abort
+        promptly if req.cancel is set. The referee enforces the limit; a late
+        reply is discarded, but any usage collected before abort is kept."""
 
     def set_seed(self, seed) -> None:
         """Optional: the referee calls this with a seed derived from DuelConfig.seed

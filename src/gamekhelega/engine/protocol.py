@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from .game import PuzzleGame
 
@@ -31,9 +31,13 @@ class Request:
     puzzle: Any = None            # solve: canonical puzzle JSON
     tips: str = ""
     output_schema: dict = field(default_factory=dict)
+    # Referee-set; not part of the wire format. Adapters should abort when set.
+    cancel: Optional[Any] = field(default=None, repr=False, compare=False)
 
     def to_json(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d.pop("cancel", None)
+        return d
 
 
 def make_schema(game: PuzzleGame, cfg: Any, count: int) -> dict:

@@ -219,6 +219,94 @@ def test_openai_adapter_against_fake_server():
     assert rep.data == {"solution": None} and rep.usage["prompt_tokens"] == 7
 
 
+def test_openai_timeout_cancels_http_request():
+    """A slow server must be disconnected near the deadline, not left running.
+
+    The server dribbles the body one byte every 0.25s so a per-operation
+    socket timeout would never fire; only closing the connection (cancel)
+    cuts the request off.
+    """
+    import http.server, threading, time
+    from gamekhelega.engine.adapters.openai_compat import OpenAICompatPlayer
+    from gamekhelega.engine.duel import _timed
+
+    state = {"finished": False}
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(n)
+            out = json.dumps({"choices": [{"message": {"content": '{"solution": null}'}}],
+                              "usage": {"prompt_tokens": 99, "completion_tokens": 1}}).encode()
+            try:
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                for i in range(0, len(out)):
+                    self.wfile.write(out[i:i + 1])
+                    self.wfile.flush()
+                    time.sleep(0.25)
+                state["finished"] = True
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+                pass
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    g = get_game("sudoku3d")
+    player = OpenAICompatPlayer(model="fake", base_url=f"http://127.0.0.1:{srv.server_port}/v1",
+                                api_key_env=None, retries=0)
+    # 1.5s is above the adapter's "remaining <= 1s, don't start" guard.
+    req = solve_request(g, g.parse_config({"n": 4}), "a1", {"layers": []}, 1.5)
+    t0 = time.monotonic()
+    rep, dt = _timed(player, req)
+    elapsed = time.monotonic() - t0
+    time.sleep(0.8)
+    srv.shutdown()
+    assert rep.error == "timeout", rep
+    assert "cancelled" in (rep.usage or {})
+    # Deadline 1.5s + 1s grace + slack; a dribble of the full body would take many seconds.
+    assert elapsed < 3.0, elapsed
+    assert dt < 3.0, dt
+    assert not state["finished"], "server completed the response after the client should have hung up"
+
+
+def test_command_adapter_kills_subprocess(tmp_path):
+    """subprocess.run(..., timeout=) must actually kill the child, not abandon it."""
+    import os, time
+    marker = tmp_path / "pid.txt"
+    bot = tmp_path / "bot.py"
+    bot.write_text(
+        "import os, sys, time, pathlib\n"
+        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid()))\n"
+        "time.sleep(30)\n"
+    )
+    g = get_game("sudoku3d")
+    req = make_request(g, g.parse_config({"n": 4}), 1, 0.4)
+    t0 = time.monotonic()
+    rep = CommandPlayer([sys.executable, str(bot)]).act(req)
+    elapsed = time.monotonic() - t0
+    assert rep.error == "timeout"
+    assert elapsed < 2.0, elapsed
+    # The child wrote its pid, then slept; it must be gone now.
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(0.05)
+    if marker.exists():
+        pid = int(marker.read_text())
+        gone = False
+        for _ in range(20):
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                gone = True
+                break
+            time.sleep(0.05)
+        assert gone, f"child pid {pid} still running"
+
+
 def test_human_adapter_scripted():
     from rich.console import Console
     g = get_game("sudoku3d")

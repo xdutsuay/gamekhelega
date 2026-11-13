@@ -6,11 +6,14 @@ OpenRouter: base_url="https://openrouter.ai/api/v1", api_key_env="OPENROUTER_API
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 
 from ..protocol import SYSTEM_PROMPT, Request, extract_json, user_prompt
 from .base import Player, Reply
@@ -27,13 +30,13 @@ class OpenAICompatPlayer(Player):
         self.temperature, self.max_tokens, self.json_mode = temperature, max_tokens, json_mode
         self.retries, self.extra_body, self.extra_headers = retries, extra_body or {}, extra_headers or {}
 
-    def _post(self, body: dict, timeout: float) -> dict:
+    def _post(self, body: dict, timeout: float, cancel: threading.Event | None = None) -> dict:
         headers = {"Content-Type": "application/json", **self.extra_headers}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(self.base_url + "/chat/completions",
                                      data=json.dumps(body).encode(), headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _urlopen(req, timeout=timeout, cancel=cancel) as r:
             return json.loads(r.read().decode())
 
     def act(self, req: Request) -> Reply:
@@ -53,7 +56,7 @@ class OpenAICompatPlayer(Player):
             if self.json_mode:
                 body["response_format"] = {"type": "json_object"}
             try:
-                resp = self._post(body, timeout=remaining)
+                resp = self._post(body, timeout=remaining, cancel=req.cancel)
             except urllib.error.HTTPError as e:
                 last_err = f"http {e.code}: {e.read()[:300]!r}"
                 if e.code == 400 and self.json_mode:  # some servers reject response_format
@@ -75,3 +78,55 @@ class OpenAICompatPlayer(Player):
                                    {"role": "user", "content": "That was not a single valid JSON "
                                     "object matching the schema. Reply with the JSON object only."}]
         return Reply(error=last_err, raw=raw[:4000], usage=usage)
+
+
+@contextmanager
+def _urlopen(req: urllib.request.Request, timeout: float, cancel: threading.Event | None):
+    """urlopen that closes the HTTP connection when `cancel` is set.
+
+    A socket timeout alone is not enough: urlopen's timeout is per socket
+    operation, so a server that dribbles bytes can outlive the deadline, and
+    an abandoned thread keeps the request open (and billable) after the
+    referee has already scored a timeout.
+    """
+    holder: list = []
+
+    def http_cls(*a, **k):
+        c = http.client.HTTPConnection(*a, **k)
+        holder.append(c)
+        return c
+
+    def https_cls(*a, **k):
+        c = http.client.HTTPSConnection(*a, **k)
+        holder.append(c)
+        return c
+
+    class HTTP(urllib.request.HTTPHandler):
+        def http_open(self, r):
+            return self.do_open(http_cls, r)
+
+    class HTTPS(urllib.request.HTTPSHandler):
+        def https_open(self, r):
+            return self.do_open(https_cls, r)
+
+    stop = threading.Event()
+
+    def watch():
+        while not stop.wait(0.05):
+            if cancel is not None and cancel.is_set():
+                break
+        else:
+            return
+        for c in list(holder):
+            try:
+                c.close()
+            except Exception:
+                pass
+
+    if cancel is not None:
+        threading.Thread(target=watch, daemon=True).start()
+    try:
+        with urllib.request.build_opener(HTTP(), HTTPS()).open(req, timeout=timeout) as r:
+            yield r
+    finally:
+        stop.set()
