@@ -73,3 +73,24 @@ def test_tie_break_order(total_a, total_b, n_correct_a, n_correct_b, time_a, tim
         assert w == ("a" if rej_a < rej_b else "b")
         return
     assert w == "draw"
+
+
+@given(difficulty=st.floats(0, 10, allow_nan=False, allow_infinity=False))
+def test_unattempted_puzzle_is_not_a_stump(difficulty):
+    """opponent_correct is None when the opponent never started the puzzle.
+    The maker gets difficulty points only, not the stump bonus."""
+    s = score_side([], [{"accepted": True, "difficulty": difficulty, "opponent_correct": None}],
+                   1, 0, 100)
+    failed = score_side([], [{"accepted": True, "difficulty": difficulty, "opponent_correct": False}],
+                        1, 0, 100)
+    assert s.n_stumped == 0
+    assert s.make_pts == pytest.approx(W_DIFF * difficulty / 10)
+    assert failed.n_stumped == 1
+    assert failed.make_pts == pytest.approx(W_STUMP + W_DIFF * difficulty / 10)
+    assert s.make_pts < failed.make_pts
+
+
+def test_unattempted_solve_is_not_an_attempt():
+    s = score_side([{"correct": None, "partial": 0.0, "time_s": 0.0}], [], 1, 0, 100)
+    assert s.n_attempted == 0 and s.n_correct == 0 and s.solve_pts == 0
+

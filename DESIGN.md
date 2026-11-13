@@ -253,11 +253,13 @@ Per side, with c = 1 if correct, p = partial ∈ [0,1], d = difficulty ∈ [0,10
 
 ```
 solve_pts    = Σ_attempted [10·c + 3·(1−c)·p]  +  5 · n_correct · (1 − solve_time_used / solve_time_s)
-make_pts     = Σ_own accepted [6·(1 − opponent_solved) + 4·d/10]  −  15 · n_own_rejected_or_missing
+make_pts     = Σ_own accepted [6·[opponent tried and failed] + 4·d/10]  −  15 · n_own_rejected_or_missing
 walkover_pts = 10 · n_opponent_rejected_or_missing     (you couldn't solve what they never validly gave)
 total        = solve_pts + make_pts + walkover_pts
 ```
 Winner = higher total. Ties are broken by more correct solves, then less solve time, then fewer rejected puzzles, then a draw.
+
+`opponent tried and failed` is true only when the opponent actually started the puzzle and got it wrong. If they never started it (the shared solve budget ran out), `opponent_correct` is `None`: the maker still gets the difficulty points for a valid puzzle, but not the +6 stump. Otherwise a side could farm stump points by running the opponent's clock down rather than by writing hard puzzles. A skipped puzzle is also not counted as an attempt on the solver's side.
 
 Why: correctness dominates. Speed is a bonus only when you are correct. Making a puzzle that stumps the opponent is worth less than solving one (+6 vs +10), so "make impossible puzzles" is not a winning strategy. An invalid puzzle costs −15 for the maker and gives +10 to the opponent, so it is strictly worse than submitting an easy valid puzzle.
 

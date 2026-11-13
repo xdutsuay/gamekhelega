@@ -3,10 +3,14 @@
 Per side X (opponent Y), over the puzzles Y made that were accepted:
   solve_pts = sum_i [ W_SOLVE*c_i + W_PARTIAL*(1-c_i)*p_i ] + W_SPEED*n_correct*(1 - t_used/T_solve)
 Over X's own submissions:
-  make_pts  = sum_{accepted j} [ W_STUMP*(1-c'_j) + W_DIFF*d_j/10 ] - W_INVALID*n_rejected_or_missing
+  make_pts  = sum_{accepted j} [ W_STUMP*(1 if c'_j is False else 0) + W_DIFF*d_j/10 ]
+              - W_INVALID*n_rejected_or_missing
 Walkover: each rejected/missing puzzle of Y gives X + W_WALKOVER (X couldn't be tested on it).
 total = solve_pts + make_pts + walkover_pts
 c_i correct (0/1), p_i partial in [0,1], d_j referee difficulty 0..10.
+c'_j is True/False if the opponent attempted the puzzle, or None if they
+never started it (ran out of time). None is not a stump: you only earn
+stump points when the opponent actually tried and failed.
 Tie-break: more correct solves > less solve time > fewer rejected puzzles > draw.
 """
 from __future__ import annotations
@@ -36,19 +40,22 @@ class SideScore:
 
 def score_side(solves: list[dict], own_made: list[dict], n_requested: int,
                opp_rejected: int, solve_time_limit: float) -> SideScore:
-    """solves: [{"correct":bool,"partial":float,"time_s":float}] for opponent's accepted puzzles.
-    own_made: [{"accepted":bool,"difficulty":float,"opponent_correct":bool|None}] own submissions."""
+    """solves: [{"correct":bool|None,"partial":float,"time_s":float}] for opponent's accepted puzzles.
+    own_made: [{"accepted":bool,"difficulty":float,"opponent_correct":bool|None}] own submissions.
+    opponent_correct/correct is None when the side never started the puzzle."""
     s = SideScore()
-    s.n_attempted = len(solves)
-    s.n_correct = sum(1 for x in solves if x["correct"])
-    s.solve_time_s = sum(x["time_s"] for x in solves)
-    s.solve_pts = sum(W_SOLVE if x["correct"] else W_PARTIAL * x.get("partial", 0.0) for x in solves)
+    attempted = [x for x in solves if x.get("correct") is not None]
+    s.n_attempted = len(attempted)
+    s.n_correct = sum(1 for x in attempted if x["correct"])
+    s.solve_time_s = sum(x["time_s"] for x in attempted)
+    s.solve_pts = sum(W_SOLVE if x["correct"] else W_PARTIAL * x.get("partial", 0.0) for x in attempted)
     if solve_time_limit > 0:
         s.solve_pts += W_SPEED * s.n_correct * max(0.0, 1 - s.solve_time_s / solve_time_limit)
     accepted = [m for m in own_made if m["accepted"]]
     s.n_rejected = n_requested - len(accepted)
-    s.n_stumped = sum(1 for m in accepted if not m.get("opponent_correct"))
-    s.make_pts = (sum(W_STUMP * (0 if m.get("opponent_correct") else 1) + W_DIFF * m["difficulty"] / 10
+    s.n_stumped = sum(1 for m in accepted if m.get("opponent_correct") is False)
+    s.make_pts = (sum(W_STUMP * (1 if m.get("opponent_correct") is False else 0)
+                      + W_DIFF * m["difficulty"] / 10
                       for m in accepted) - W_INVALID * s.n_rejected)
     s.walkover_pts = W_WALKOVER * opp_rejected
     s.total = s.solve_pts + s.make_pts + s.walkover_pts
