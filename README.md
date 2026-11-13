@@ -7,11 +7,15 @@ A referee checks every puzzle for rule validity and a **unique** solution, grade
 and updates per-game Elo ratings. Games are plugins: **3D Sudoku** (9×9×9: every line along x, y and z holds 1-9, and every layer is a
 sudoku) and **3D Zip** (one path through every cell of an n×n×n cube, through numbered waypoints in order).
 
+This stack is also a short course: [docs/LEARNING.md](docs/LEARNING.md) walks PR #3
+through the latest educational PR, with a lesson, a key diff, a "Try it", and a
+question for each one.
+
 ## Quickstart
 
 ```bash
 pip install -e ".[dev]"             # Python >= 3.10; includes the solver extras
-pytest -q                           # ~47 tests, ~20 s after numba warm-up
+pytest -q                           # there is no CI; run tests locally (~20 s after numba warm-up)
 gamekhelega games
 gamekhelega duel configs/duel_mock_4.json        # full duel with mock players, no API key
 gamekhelega generate -g sudoku3d -p n=9 --difficulty medium --count 2 --out pack.json
@@ -25,6 +29,13 @@ gamekhelega leaderboard                          # Elo per game, from runs/leade
 The core package (engine, adapters, mock player) depends only on numpy, rich and typer.
 `numba`, `python-sat` and `ortools` are the `[solvers]` extra, needed when a built-in
 game proves uniqueness. `pip install -e ".[solvers]"` is enough if you are not running tests.
+
+There is no CI on this repository, so tests are run locally:
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
 
 A duel writes `runs/<id>/replay.jsonl` and `runs/<id>/result.json`; walk through one with
 `gamekhelega replay runs/<id> --boards`.
