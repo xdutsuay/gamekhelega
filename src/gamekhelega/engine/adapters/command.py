@@ -30,6 +30,6 @@ class CommandPlayer(Player):
         if p.returncode != 0:
             return Reply(error=f"exit {p.returncode}: {p.stderr[-500:]}", raw=p.stdout[:4000])
         try:
-            return Reply(data=extract_json(p.stdout), raw=p.stdout[:4000])
+            return Reply(data=extract_json(p.stdout, schema=req.output_schema), raw=p.stdout[:4000])
         except ValueError as e:
             return Reply(error=f"parse: {e}", raw=p.stdout[:4000])

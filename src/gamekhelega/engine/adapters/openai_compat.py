@@ -70,7 +70,7 @@ class OpenAICompatPlayer(Player):
                     usage[k] = usage.get(k, 0) + v
             try:
                 raw = resp["choices"][0]["message"]["content"] or ""
-                return Reply(data=extract_json(raw), raw=raw[:4000], usage=usage)
+                return Reply(data=extract_json(raw, schema=req.output_schema), raw=raw[:4000], usage=usage)
             except (KeyError, IndexError, ValueError) as e:
                 last_err = f"parse: {e}"
                 # one repair turn: show the model its output and ask for JSON only

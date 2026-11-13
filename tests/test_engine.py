@@ -58,6 +58,33 @@ def test_prompts_and_json_extraction():
     assert extract_json('Sure! {"solution": null} hope it helps') == {"solution": None}
 
 
+def test_extract_json_skips_decoys_and_prefers_schema():
+    """Untrusted model text: decoy braces, a scratch object, then the real answer."""
+    decoy = 'Here is {example} and then {"solution": [1, 2]}'
+    assert extract_json(decoy) == {"solution": [1, 2]}
+    # Two valid objects: the last one that has the expected keys wins, even if
+    # a earlier scratch object also parsed.
+    two = 'Scratch: {"note": "thinking"} Final: {"solution": null}'
+    assert extract_json(two, required=["solution"]) == {"solution": None}
+    assert extract_json(two, schema={"required": ["solution"]}) == {"solution": None}
+    # A fenced ```json block is preferred over an earlier prose object.
+    fenced = 'Prose {"solution": "wrong"}\n```json\n{"solution": "right"}\n```'
+    assert extract_json(fenced, required=["solution"]) == {"solution": "right"}
+    # A plain fence still beats following prose if it matches.
+    plain = '```\n{"solution": 1}\n``` and later {"solution": 2}'
+    assert extract_json(plain, required=["solution"]) == {"solution": 1}
+    # Nested braces in a string stay inside the parent object.
+    nested = '{"solution": "cell {1,2}"} trailing {"note": "nope"}'
+    assert extract_json(nested, required=["solution"]) == {"solution": "cell {1,2}"}
+    # No object at all is a clean error, not a JSONDecodeError on a decoy.
+    try:
+        extract_json("sorry, {example} is not json")
+    except ValueError as e:
+        assert "no JSON object" in str(e)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_scoring_and_winner():
     a = score_side([{"correct": True, "partial": 1, "time_s": 10}], [{"accepted": True, "difficulty": 5,
                    "opponent_correct": False}], 1, 0, 100)
