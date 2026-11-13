@@ -178,5 +178,22 @@ def leaderboard(path: Path = Path("runs/leaderboard.json"),
     con.print(leaderboard_table(str(path), game))
 
 
+elo_app = typer.Typer(help="Elo leaderboard tools. The run folders are the source of truth.")
+app.add_typer(elo_app, name="elo")
+
+
+@elo_app.command("rebuild")
+def elo_rebuild(runs: Path = typer.Option(Path("runs"), "--runs", help="directory of duel run folders"),
+                out: Path = typer.Option(Path("runs/leaderboard.json"), "--out",
+                                         help="leaderboard JSON to write (replaced, not appended)"),
+                game: Optional[str] = typer.Option(None, "--game", "-g", help="only this game")):
+    """Recompute the leaderboard from result.json files, in duel_id order."""
+    from .engine import elo
+    data = elo.rebuild(runs, out, game=game)
+    n_players = sum(len(board) for board in data.values())
+    n_games = len(data)
+    con.print(f"rebuilt {out} from {runs} ({n_games} game(s), {n_players} player(s))")
+
+
 if __name__ == "__main__":
     app()
