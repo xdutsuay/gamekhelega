@@ -6,6 +6,7 @@ JSON-able dict. The referee measures wall-clock time itself.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
@@ -102,19 +103,58 @@ def user_prompt(req: Request) -> str:
     return head + task + tips + "\nOUTPUT JSON SCHEMA:\n" + json.dumps(req.output_schema) + "\n"
 
 
-def extract_json(text: str) -> Any:
-    """Lenient: strip code fences / leading prose, parse the first {...} object."""
+_FENCE = re.compile(r"```([^\n`]*)\n?(.*?)```", re.DOTALL)
+
+
+def extract_json(text: str, required: list[str] | None = None, schema: dict | None = None) -> Any:
+    """Pull a JSON object out of untrusted model text.
+
+    Models often write `{example}` or a scratch object in prose before the
+    real answer. Taking the first `{` is how you parse the wrong one.
+    Instead we scan every candidate with JSONDecoder.raw_decode, prefer a
+    fenced ```json block, and then take the last valid object that has the
+    expected keys (from `required` or `schema["required"]`). If nothing
+    matches the keys, we fall back to the last valid object.
+    """
     t = text.strip()
-    if t.startswith("```"):
-        t = t.split("\n", 1)[1] if "\n" in t else t
-        t = t.rsplit("```", 1)[0]
-    try:
-        return json.loads(t)
-    except json.JSONDecodeError:
-        pass
-    start = t.find("{")
-    if start < 0:
-        raise ValueError("no JSON object in reply")
+    keys = list(required or (schema or {}).get("required") or [])
+    json_fences, other_fences = [], []
+    for m in _FENCE.finditer(t):
+        lang, body = m.group(1).strip().lower(), m.group(2)
+        (json_fences if lang in ("json", "jsonc") else other_fences).append(body)
+    for pool in (json_fences, other_fences, [t]):
+        picked = _pick_object(pool, keys, matching_only=True)
+        if picked is not None:
+            return picked
+    for pool in (json_fences, other_fences, [t]):
+        picked = _pick_object(pool, keys, matching_only=False)
+        if picked is not None:
+            return picked
+    raise ValueError("no JSON object in reply")
+
+
+def _iter_objects(text: str):
     dec = json.JSONDecoder()
-    obj, _ = dec.raw_decode(t[start:])
-    return obj
+    i, n = 0, len(text)
+    while i < n:
+        start = text.find("{", i)
+        if start < 0:
+            return
+        try:
+            obj, end = dec.raw_decode(text, start)
+        except json.JSONDecodeError:
+            i = start + 1
+            continue
+        if isinstance(obj, dict):
+            yield obj
+        i = end
+
+
+def _pick_object(sources: list[str], keys: list[str], matching_only: bool):
+    last = None
+    for src in sources:
+        for obj in _iter_objects(src):
+            if matching_only and keys and not all(k in obj for k in keys):
+                continue
+            last = obj
+    return last
