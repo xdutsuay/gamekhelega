@@ -1,5 +1,6 @@
 import json
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -334,3 +335,38 @@ def test_template_game_plugs_in():
                        DuelConfig(game="latin", game_config={"n": 4}, puzzles_per_side=2, make_time_s=20,
                                   solve_time_s=20, out_dir=d, leaderboard=None))
     assert res["winner"] == "a"
+
+
+def test_wilson_interval_is_honest_about_one_game():
+    from gamekhelega.engine.match import wilson_interval
+    lo, hi = wilson_interval(1, 1)
+    assert 0 <= lo < 0.5 and hi == 1.0
+    lo0, hi0 = wilson_interval(0, 1)
+    assert lo0 == 0.0 and 0.5 < hi0 <= 1.0
+    lo10, hi10 = wilson_interval(10, 10)
+    assert lo10 > lo  # more wins shrink the uncertainty on the low side
+    assert hi10 == 1.0
+
+
+def test_match_swaps_seats_and_reports_ci(tmp_path):
+    from gamekhelega.engine.match import run_match
+    g = get_game("sudoku3d")
+    dc = DuelConfig(game="sudoku3d", game_config={"n": 4}, puzzles_per_side=1,
+                    make_time_s=15, solve_time_s=15, seed=7,
+                    out_dir=str(tmp_path), leaderboard=None)
+    a = make_player({"type": "mock", "id": "strong", "skill": 1.0, "difficulty": "medium"}, g)
+    b = make_player({"type": "mock", "id": "weak", "skill": 0.0, "bad_make": 1.0}, g)
+    m = run_match(g, a, b, dc, games=4)
+    assert m["a_wins"] + m["b_wins"] + m["draws"] == 4
+    assert m["a_wins"] == 4  # weak always makes invalid puzzles and can't solve
+    assert m["duels"][0]["seats"] == {"a": "strong", "b": "weak"}
+    assert m["duels"][1]["seats"] == {"a": "weak", "b": "strong"}
+    assert m["duels"][0]["seed"] == 7 and m["duels"][1]["seed"] == 8
+    lo, hi = m["ci95"]
+    assert 0 <= lo <= m["a_rate"] <= hi <= 1
+    assert Path(m["out"]).exists()
+    # Same seeds and players again: same mapped winners (reproducible match).
+    m2 = run_match(g, a, b, DuelConfig(game="sudoku3d", game_config={"n": 4}, puzzles_per_side=1,
+                                       make_time_s=15, solve_time_s=15, seed=7,
+                                       out_dir=str(tmp_path / "r2"), leaderboard=None), games=4)
+    assert [d["score_a"] for d in m["duels"]] == [d["score_a"] for d in m2["duels"]]

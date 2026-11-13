@@ -33,7 +33,20 @@ def test_cli_duel_and_replay(tmp_path):
     assert json.loads((tmp_path / "lb.json").read_text()) == json.loads(rebuilt.read_text())
 
 
+def test_cli_match(tmp_path):
+    import json
+    cfg = json.loads(open("configs/duel_mock_4.json").read())
+    cfg["out_dir"] = str(tmp_path)
+    cfg["leaderboard"] = None
+    cfg["puzzles_per_side"] = 1
+    c = tmp_path / "d.json"; c.write_text(json.dumps(cfg))
+    r = runner.invoke(app, ["match", str(c), "--games", "2"])
+    assert r.exit_code == 0, r.output
+    assert "Wilson 95% CI" in r.output
+    assert list(tmp_path.glob("match-*.json"))
+
+
 def test_every_command_accepts_game():
-    for cmd in ["generate", "solve", "check", "play", "duel", "view", "replay", "leaderboard"]:
+    for cmd in ["generate", "solve", "check", "play", "duel", "match", "view", "replay", "leaderboard"]:
         out = runner.invoke(app, [cmd, "--help"], env={"COLUMNS": "200"}).output
         assert "--game" in out, cmd
