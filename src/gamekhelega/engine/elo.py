@@ -70,20 +70,52 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def apply(data: dict, game: str, a: str, b: str, result: str) -> dict:
+    """Apply one duel to an in-memory leaderboard. result in {"a","b","draw"}."""
+    board = data.setdefault(game, {})
+    for pid in (a, b):
+        board.setdefault(pid, {"elo": BASE, "w": 0, "l": 0, "d": 0})
+    sa = {"a": 1.0, "b": 0.0, "draw": 0.5}[result]
+    board[a]["elo"], board[b]["elo"] = (round(x, 1) for x in update(board[a]["elo"], board[b]["elo"], sa))
+    if result == "draw":
+        board[a]["d"] += 1; board[b]["d"] += 1
+    else:
+        w, l = (a, b) if result == "a" else (b, a)
+        board[w]["w"] += 1; board[l]["l"] += 1
+    return board
+
+
 def record(path: str | os.PathLike, game: str, a: str, b: str, result: str) -> dict:
     """result in {"a","b","draw"}. Returns the updated board for `game`."""
     p = Path(path)
     with _lock(p):
         data = json.loads(p.read_text()) if p.exists() else {}
-        board = data.setdefault(game, {})
-        for pid in (a, b):
-            board.setdefault(pid, {"elo": BASE, "w": 0, "l": 0, "d": 0})
-        sa = {"a": 1.0, "b": 0.0, "draw": 0.5}[result]
-        board[a]["elo"], board[b]["elo"] = (round(x, 1) for x in update(board[a]["elo"], board[b]["elo"], sa))
-        if result == "draw":
-            board[a]["d"] += 1; board[b]["d"] += 1
-        else:
-            w, l = (a, b) if result == "a" else (b, a)
-            board[w]["w"] += 1; board[l]["l"] += 1
+        board = apply(data, game, a, b, result)
         _atomic_write(p, json.dumps(data, indent=2))
         return board
+
+
+def rebuild(runs_dir: str | os.PathLike, out: str | os.PathLike,
+            game: str | None = None) -> dict:
+    """Recompute a leaderboard from result.json files, oldest duel_id first.
+
+    The run folders are the event log; the leaderboard is a view that can
+    always be rebuilt from them. Existing `out` is replaced, not appended to.
+    """
+    events = []
+    for path in Path(runs_dir).rglob("result.json"):
+        ev = json.loads(path.read_text())
+        if game and ev.get("game") != game:
+            continue
+        players = ev.get("players") or {}
+        if ev.get("winner") not in {"a", "b", "draw"} or "a" not in players or "b" not in players:
+            continue
+        events.append(ev)
+    events.sort(key=lambda ev: ev.get("duel_id", ""))
+    data: dict = {}
+    for ev in events:
+        apply(data, ev["game"], ev["players"]["a"], ev["players"]["b"], ev["winner"])
+    outp = Path(out)
+    with _lock(outp):
+        _atomic_write(outp, json.dumps(data, indent=2))
+    return data

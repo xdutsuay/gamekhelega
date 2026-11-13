@@ -100,6 +100,33 @@ def test_elo_concurrent_writes_lose_no_updates(tmp_path):
     assert not list(tmp_path.glob("*.lock"))
 
 
+def test_elo_rebuild_matches_incremental(tmp_path):
+    """A leaderboard rebuilt from result.json files must match one built as the duels ran.
+
+    Files are applied in duel_id order, not directory or mtime order, so a later
+    write with an earlier id still lands in the right place.
+    """
+    runs = tmp_path / "runs"
+    # Deliberately not in chronological directory-creation or duel_id order.
+    events = [
+        ("20260101-000003-cccccc", "g", "r", "q", "b"),
+        ("20260101-000001-aaaaaa", "g", "p", "q", "a"),
+        ("20260101-000002-bbbbbb", "g", "p", "r", "draw"),
+    ]
+    for did, game, a, b, w in events:
+        d = runs / did
+        d.mkdir(parents=True)
+        (d / "result.json").write_text(json.dumps({
+            "duel_id": did, "game": game, "players": {"a": a, "b": b}, "winner": w,
+        }))
+    lb = tmp_path / "lb.json"
+    for did, game, a, b, w in sorted(events, key=lambda e: e[0]):
+        elo.record(lb, game, a, b, w)
+    rebuilt = tmp_path / "rebuilt.json"
+    elo.rebuild(runs, rebuilt)
+    assert json.loads(lb.read_text()) == json.loads(rebuilt.read_text())
+
+
 def test_mock_duel_end_to_end(tmp_path):
     g = get_game("sudoku3d")
     dc = DuelConfig(game="sudoku3d", game_config={"n": 4}, puzzles_per_side=3, make_time_s=30,

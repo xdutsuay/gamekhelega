@@ -27,6 +27,10 @@ def test_cli_duel_and_replay(tmp_path):
     run = next(p for p in tmp_path.iterdir() if p.is_dir())
     assert runner.invoke(app, ["replay", str(run), "--boards"]).exit_code == 0
     assert "mock-strong" in runner.invoke(app, ["leaderboard", "--path", str(tmp_path / "lb.json")]).output
+    rebuilt = tmp_path / "rebuilt.json"
+    r = runner.invoke(app, ["elo", "rebuild", "--runs", str(tmp_path), "--out", str(rebuilt)])
+    assert r.exit_code == 0, r.output
+    assert json.loads((tmp_path / "lb.json").read_text()) == json.loads(rebuilt.read_text())
 
 
 def test_every_command_accepts_game():
