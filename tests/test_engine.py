@@ -121,7 +121,7 @@ def test_elo_concurrent_writes_lose_no_updates(tmp_path):
     for t in threads:
         t.join()
     assert not errors, errors
-    board = json.loads(path.read_text())["g"]
+    board = json.loads(path.read_text())["g"][""]
     assert board["p"]["w"] == n and board["q"]["l"] == n
     assert board["p"]["l"] == 0 and board["q"]["w"] == 0
     assert not list(tmp_path.glob("*.tmp.*"))
@@ -167,7 +167,7 @@ def test_mock_duel_end_to_end(tmp_path):
     assert res["scores"]["b"]["n_correct"] == 0
     lines = (tmp_path / res["duel_id"] / "replay.jsonl").read_text().splitlines()
     assert json.loads(lines[0])["event"] == "start" and json.loads(lines[-1])["event"] == "end"
-    assert json.loads((tmp_path / "lb.json").read_text())["sudoku3d"]["strong"]["w"] == 1
+    assert json.loads((tmp_path / "lb.json").read_text())["sudoku3d"]["n=4,variant=layer"]["strong"]["w"] == 1
 
 
 def _stable_duel(res: dict) -> dict:
@@ -566,7 +566,7 @@ def test_bt_recovers_ranking_and_is_order_independent(tmp_path):
         elo.record(p1, "g", a, b, {1.0: "a", 0.0: "b", 0.5: "draw"}[sa])
     for a, b, sa in wins_then_upset:
         elo.record(p2, "g", a, b, {1.0: "a", 0.0: "b", 0.5: "draw"}[sa])
-    e1, e2 = json.loads(p1.read_text())["g"], json.loads(p2.read_text())["g"]
+    e1, e2 = json.loads(p1.read_text())["g"][""], json.loads(p2.read_text())["g"][""]
     assert e1["strong"]["elo"] != e2["strong"]["elo"]
 
 
@@ -596,3 +596,31 @@ def test_bt_reads_result_files_and_cli(tmp_path):
     assert "Bradley-Terry" in r.output and "A" in r.output
     assert json.loads(out.read_text())["g"]["A"]["w"] == 10
 
+
+def test_elo_keys_by_size_and_reads_legacy(tmp_path):
+    """A 4³ rating is not a 9³ rating. Legacy flat files still load, and a
+    sized write migrates them without dropping the old numbers."""
+    p = tmp_path / "lb.json"
+    elo.record(p, "sudoku3d", "x", "y", "a", size="n=4")
+    elo.record(p, "sudoku3d", "x", "y", "a", size="n=9")
+    data = json.loads(p.read_text())
+    assert data["sudoku3d"]["n=4"]["x"]["w"] == 1
+    assert data["sudoku3d"]["n=9"]["x"]["w"] == 1
+    elo.record(p, "sudoku3d", "x", "y", "a", size="n=4")
+    data = json.loads(p.read_text())
+    assert data["sudoku3d"]["n=4"]["x"]["w"] == 2
+    assert data["sudoku3d"]["n=9"]["x"]["w"] == 1  # untouched
+    # Legacy {game: {player: record}} is readable; first sized write wraps it.
+    leg = tmp_path / "legacy.json"
+    leg.write_text(json.dumps({"sudoku3d": {"old": {"elo": 1600.0, "w": 3, "l": 0, "d": 0}}}))
+    elo.record(leg, "sudoku3d", "old", "new", "a", size="n=4")
+    migrated = json.loads(leg.read_text())
+    assert migrated["sudoku3d"][""]["old"]["w"] == 3 and migrated["sudoku3d"][""]["old"]["elo"] == 1600.0
+    assert migrated["sudoku3d"]["n=4"]["old"]["w"] == 1  # new bucket starts at 1500
+    from gamekhelega.engine.results import leaderboard_table
+    from io import StringIO
+    from rich.console import Console
+    buf = StringIO()
+    Console(file=buf, width=120, color_system=None).print(leaderboard_table(str(leg)))
+    text = buf.getvalue()
+    assert "old" in text and "n=4" in text and "1600.0" in text

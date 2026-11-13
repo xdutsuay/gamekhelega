@@ -193,7 +193,8 @@ def run_duel(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig) -> dict:
     replay.log("end", winner=w, scores=result["scores"])
     replay.close()
     if dc.leaderboard:
-        result["leaderboard"] = elo.record(dc.leaderboard, game.name, a.id, b.id, w)
+        result["leaderboard"] = elo.record(dc.leaderboard, game.name, a.id, b.id, w,
+                               size=elo.size_key(game.config_to_json(cfg)))
     result["out_dir"] = str(out)
     return result
 

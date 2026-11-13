@@ -1,4 +1,9 @@
-"""Per-game Elo leaderboard stored as JSON: {game: {player_id: {"elo":..,"w":..,"l":..,"d":..}}}.
+"""Elo leaderboard stored as JSON: {game: {size: {player_id: {"elo":..,"w":..,"l":..,"d":..}}}}.
+
+A rating is a rating *of* a game at a given size (4³ is not 9³). The `size`
+key comes from size_key(game_config), e.g. "n=4,variant=layer". Legacy files
+that stored {game: {player: ...}} are still readable; the first write migrates
+them under an empty size key so old ratings are not dropped.
 
 The file is the result of a locked read-modify-write: writers take an
 O_CREAT|O_EXCL lockfile, write a sibling temp file, then os.replace it into
@@ -70,9 +75,44 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def apply(data: dict, game: str, a: str, b: str, result: str) -> dict:
+def size_key(game_config: dict | None) -> str:
+    """Stable bucket for a game config: n and variant if present, else compact JSON."""
+    cfg = dict(game_config or {})
+    if "n" in cfg:
+        parts = [f"n={cfg['n']}"]
+        if cfg.get("variant"):
+            parts.append(f"variant={cfg['variant']}")
+        return ",".join(parts)
+    if not cfg:
+        return ""
+    return json.dumps(cfg, sort_keys=True, separators=(",", ":"))
+
+
+def _is_player_record(v) -> bool:
+    return isinstance(v, dict) and "elo" in v
+
+
+def iter_buckets(game_board: dict):
+    """Yield (size, player_board) for both the legacy flat layout and the sized one."""
+    if game_board and all(_is_player_record(v) for v in game_board.values()):
+        yield "", game_board
+        return
+    for size, board in sorted(game_board.items()):
+        if isinstance(board, dict):
+            yield size, board
+
+
+def _bucket(data: dict, game: str, size: str) -> dict:
+    game_board = data.setdefault(game, {})
+    if game_board and all(_is_player_record(v) for v in game_board.values()):
+        data[game] = {"": game_board}
+        game_board = data[game]
+    return game_board.setdefault(size, {})
+
+
+def apply(data: dict, game: str, a: str, b: str, result: str, size: str = "") -> dict:
     """Apply one duel to an in-memory leaderboard. result in {"a","b","draw"}."""
-    board = data.setdefault(game, {})
+    board = _bucket(data, game, size)
     for pid in (a, b):
         board.setdefault(pid, {"elo": BASE, "w": 0, "l": 0, "d": 0})
     sa = {"a": 1.0, "b": 0.0, "draw": 0.5}[result]
@@ -85,12 +125,13 @@ def apply(data: dict, game: str, a: str, b: str, result: str) -> dict:
     return board
 
 
-def record(path: str | os.PathLike, game: str, a: str, b: str, result: str) -> dict:
-    """result in {"a","b","draw"}. Returns the updated board for `game`."""
+def record(path: str | os.PathLike, game: str, a: str, b: str, result: str,
+           size: str = "") -> dict:
+    """result in {"a","b","draw"}. Returns the updated player board for this game and size."""
     p = Path(path)
     with _lock(p):
         data = json.loads(p.read_text()) if p.exists() else {}
-        board = apply(data, game, a, b, result)
+        board = apply(data, game, a, b, result, size=size)
         _atomic_write(p, json.dumps(data, indent=2))
         return board
 
@@ -114,7 +155,8 @@ def rebuild(runs_dir: str | os.PathLike, out: str | os.PathLike,
     events.sort(key=lambda ev: ev.get("duel_id", ""))
     data: dict = {}
     for ev in events:
-        apply(data, ev["game"], ev["players"]["a"], ev["players"]["b"], ev["winner"])
+        apply(data, ev["game"], ev["players"]["a"], ev["players"]["b"], ev["winner"],
+              size=size_key(ev.get("game_config") or {}))
     outp = Path(out)
     with _lock(outp):
         _atomic_write(outp, json.dumps(data, indent=2))

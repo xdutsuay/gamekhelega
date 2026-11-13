@@ -188,7 +188,8 @@ def test_mock_duel_zip3d(tmp_path):
     res = run_duel(GAME, a, b, dc)
     assert res["winner"] == "a"
     assert res["scores"]["b"]["n_correct"] == 0 and res["scores"]["a"]["n_correct"] == 0
-    assert json.loads((tmp_path / "lb.json").read_text())["zip3d"]["strong"]["w"] == 1
+    data = json.loads((tmp_path / "lb.json").read_text())["zip3d"]
+    assert data["n=3"]["strong"]["w"] == 1
 
 
 def test_cli_zip3d(tmp_path):
