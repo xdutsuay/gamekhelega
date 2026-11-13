@@ -432,6 +432,52 @@ def test_command_adapter_kills_subprocess(tmp_path):
         assert gone, f"child pid {pid} still running"
 
 
+def test_command_adapter_honours_cancel_and_kills_the_group(tmp_path):
+    """req.cancel must stop the player near now, and kill grandchildren too."""
+    import os, threading, time
+    marker = tmp_path / "pids.txt"
+    bot = tmp_path / "bot.py"
+    bot.write_text(
+        "import os, sys, time, pathlib, subprocess\n"
+        f"path = pathlib.Path({str(marker)!r})\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+        "path.write_text(f'{os.getpid()} {child.pid}')\n"
+        "time.sleep(30)\n"
+    )
+    g = get_game("sudoku3d")
+    req = make_request(g, g.parse_config({"n": 4}), 1, 30)  # long budget; cancel should win
+    req.cancel = threading.Event()
+    box: dict = {}
+
+    def run():
+        box["rep"] = CommandPlayer([sys.executable, str(bot)]).act(req)
+
+    th = threading.Thread(target=run)
+    th.start()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(0.05)
+    req.cancel.set()
+    t0 = time.monotonic()
+    th.join(3)
+    elapsed = time.monotonic() - t0
+    assert not th.is_alive()
+    assert box["rep"].error == "timeout"
+    assert elapsed < 1.5, elapsed
+    assert marker.exists(), "child never wrote its pids"
+    pids = [int(x) for x in marker.read_text().split()]
+    for pid in pids:
+        gone = False
+        for _ in range(20):
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                gone = True
+                break
+            time.sleep(0.05)
+        assert gone, f"pid {pid} still running after cancel"
+
+
 def test_human_adapter_scripted():
     from rich.console import Console
     g = get_game("sudoku3d")
