@@ -142,6 +142,9 @@ def run_duel(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig) -> dict:
             left = dc.solve_time_s - spent
             r = {"id": rec["id"], "correct": False, "partial": 0.0, "time_s": 0.0, "error": ""}
             if left < dc.min_solve_request_s:
+                # Not an attempt: the maker must not earn stump points for a
+                # puzzle the opponent never got to start.
+                r["correct"] = None
                 r["error"] = "no time left"
                 results.append(r)
                 continue
