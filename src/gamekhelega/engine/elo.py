@@ -1,11 +1,21 @@
-"""Per-game Elo leaderboard stored as JSON: {game: {player_id: {"elo":..,"w":..,"l":..,"d":..}}}."""
+"""Per-game Elo leaderboard stored as JSON: {game: {player_id: {"elo":..,"w":..,"l":..,"d":..}}}.
+
+The file is the result of a locked read-modify-write: writers take an
+O_CREAT|O_EXCL lockfile, write a sibling temp file, then os.replace it into
+place. Two duels finishing at once then cannot lose an update, and a crash
+mid-write cannot leave a half-written JSON file.
+"""
 from __future__ import annotations
 
 import json
 import os
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 K, BASE = 32.0, 1500.0
+_LOCK_TIMEOUT_S = 10.0
+_LOCK_STALE_S = 30.0
 
 
 def expected(ra: float, rb: float) -> float:
@@ -17,20 +27,63 @@ def update(ra: float, rb: float, score_a: float, k: float = K) -> tuple[float, f
     return ra + k * (score_a - ea), rb + k * ((1 - score_a) - (1 - ea))
 
 
+@contextmanager
+def _lock(path: Path, timeout: float = _LOCK_TIMEOUT_S, stale_s: float = _LOCK_STALE_S):
+    """Cross-platform exclusive lock: create path.lock with O_EXCL, or wait.
+
+    If a holder crashes, the lockfile is treated as stale after stale_s and
+    stolen. No extra dependencies (fcntl is POSIX-only; this works on Windows too).
+    """
+    lock = path.with_name(path.name + ".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, str(os.getpid()).encode())
+            finally:
+                os.close(fd)
+            break
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > stale_s:
+                    lock.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"timed out waiting for {lock}")
+            time.sleep(0.01)
+    try:
+        yield
+    finally:
+        try:
+            lock.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
 def record(path: str | os.PathLike, game: str, a: str, b: str, result: str) -> dict:
     """result in {"a","b","draw"}. Returns the updated board for `game`."""
     p = Path(path)
-    data = json.loads(p.read_text()) if p.exists() else {}
-    board = data.setdefault(game, {})
-    for pid in (a, b):
-        board.setdefault(pid, {"elo": BASE, "w": 0, "l": 0, "d": 0})
-    sa = {"a": 1.0, "b": 0.0, "draw": 0.5}[result]
-    board[a]["elo"], board[b]["elo"] = (round(x, 1) for x in update(board[a]["elo"], board[b]["elo"], sa))
-    if result == "draw":
-        board[a]["d"] += 1; board[b]["d"] += 1
-    else:
-        w, l = (a, b) if result == "a" else (b, a)
-        board[w]["w"] += 1; board[l]["l"] += 1
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2))
-    return board
+    with _lock(p):
+        data = json.loads(p.read_text()) if p.exists() else {}
+        board = data.setdefault(game, {})
+        for pid in (a, b):
+            board.setdefault(pid, {"elo": BASE, "w": 0, "l": 0, "d": 0})
+        sa = {"a": 1.0, "b": 0.0, "draw": 0.5}[result]
+        board[a]["elo"], board[b]["elo"] = (round(x, 1) for x in update(board[a]["elo"], board[b]["elo"], sa))
+        if result == "draw":
+            board[a]["d"] += 1; board[b]["d"] += 1
+        else:
+            w, l = (a, b) if result == "a" else (b, a)
+            board[w]["w"] += 1; board[l]["l"] += 1
+        _atomic_write(p, json.dumps(data, indent=2))
+        return board
