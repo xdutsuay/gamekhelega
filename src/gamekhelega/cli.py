@@ -226,5 +226,29 @@ def elo_rebuild(runs: Path = typer.Option(Path("runs"), "--runs", help="director
     con.print(f"rebuilt {out} from {runs} ({n_games} game(s), {n_players} player(s))")
 
 
+@elo_app.command("bt")
+def elo_bt(runs: Path = typer.Option(Path("runs"), "--runs", help="directory of duel run folders"),
+           game: Optional[str] = typer.Option(None, "--game", "-g", help="only this game"),
+           boots: int = typer.Option(400, "--boots", help="bootstrap resamples for the 95% CI"),
+           seed: int = typer.Option(0, "--seed"),
+           out: Optional[Path] = typer.Option(None, "--out", help="optional JSON path to write")):
+    """Fit Bradley-Terry ratings from result.json / match-*.json, with a bootstrap CI."""
+    from rich.table import Table
+    from .engine import bt
+    data = bt.fit_runs(runs, game=game, n_boot=boots, seed=seed)
+    t = Table(title=f"Bradley-Terry ({runs})")
+    for c in ("game", "player", "rating", "lo", "hi", "w", "l", "d"):
+        t.add_column(c)
+    for g, board in sorted(data.items()):
+        for pid, r in sorted(board.items(), key=lambda kv: -kv[1]["rating"]):
+            lo = "" if r["lo"] is None else f"{r['lo']:.1f}"
+            hi = "" if r["hi"] is None else f"{r['hi']:.1f}"
+            t.add_row(g, pid, f"{r['rating']:.1f}", lo, hi, str(r["w"]), str(r["l"]), str(r["d"]))
+    con.print(t)
+    if out:
+        out.write_text(json.dumps(data, indent=2))
+        con.print(f"wrote {out}")
+
+
 if __name__ == "__main__":
     app()
