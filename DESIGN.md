@@ -183,7 +183,7 @@ Every adapter implements `Player.act(Request) -> Reply(data, raw, error, usage)`
 | type | spec keys | notes |
 |---|---|---|
 | `mock` | id, skill (P(solve)), bad_make (P(corrupt a made puzzle)), difficulty, seed, make_time_budget | uses `game.generate`/`solve`; game-agnostic corruption (drops the solution) |
-| `openai` | model, id, base_url, api_key_env, temperature, max_tokens, json_mode, retries, extra_body, extra_headers | stdlib urllib. Works with any `/chat/completions` server: OpenAI, OpenRouter, Together, vLLM, Ollama, LM Studio, xAI, etc. Uses `response_format: json_object`; this is dropped automatically if the server returns 400. Per-call timeout = time left. Retries on transport errors, then does one "repair" turn if the JSON does not parse. Sums token usage. |
+| `openai` | model, id, base_url, api_key_env, temperature, max_tokens (default 8192; `null` disables), json_mode, retries, extra_body, extra_headers | stdlib urllib. Works with any `/chat/completions` server: OpenAI, OpenRouter, Together, vLLM, Ollama, LM Studio, xAI, etc. Uses `response_format: json_object`; this is dropped automatically if the server returns 400. Default `max_tokens=8192` is a budget guardrail against a rambling completion; raise it for large MAKE replies (the 10-puzzle 9³ example uses 16384). Per-call timeout = time left. Retries on 429/5xx with backoff, then does one "repair" turn if the JSON does not parse. Sums token usage across attempts. |
 | `command` | cmd (list or str), id, cwd, env | Request JSON goes on stdin; one JSON object is read from stdout. For local bots and solvers in any language. |
 | `human` | id, make_mode (`assist` = engine generates at a chosen difficulty, `file` = load `{"puzzles":[...]}`) | SOLVE runs the interactive play loop |
 

@@ -247,6 +247,23 @@ def test_openai_adapter_against_fake_server():
     assert rep.data == {"solution": None} and rep.usage["prompt_tokens"] == 7
 
 
+def test_openai_default_max_tokens_is_a_guardrail():
+    from gamekhelega.engine.adapters.openai_compat import DEFAULT_MAX_TOKENS, OpenAICompatPlayer
+    ok = {"choices": [{"message": {"content": '{"solution": null}'}}], "usage": {}}
+    g = get_game("sudoku3d")
+    req = solve_request(g, g.parse_config({"n": 4}), "a1", {"layers": []}, 10)
+    srv, hits = _openai_scripted_server([(200, {}, ok)])
+    OpenAICompatPlayer(model="fake", base_url=f"http://127.0.0.1:{srv.server_port}/v1",
+                       api_key_env=None).act(req)
+    srv.shutdown()
+    assert hits["bodies"][0]["max_tokens"] == DEFAULT_MAX_TOKENS == 8192
+    srv, hits = _openai_scripted_server([(200, {}, ok)])
+    OpenAICompatPlayer(model="fake", base_url=f"http://127.0.0.1:{srv.server_port}/v1",
+                       api_key_env=None, max_tokens=None).act(req)
+    srv.shutdown()
+    assert "max_tokens" not in hits["bodies"][0]
+
+
 def _openai_scripted_server(script):
     """HTTP server that walks a list of (status, headers, body) responses."""
     import http.server, threading
