@@ -19,7 +19,11 @@ from dataclasses import dataclass
 import numpy as np
 
 from .model import ZipConfig, ZipPuzzle, cell, edge, neighbours
-from .solver_dfs import dfs_solve
+
+
+def _dfs_solve(*args, **kwargs):
+    from .solver_dfs import dfs_solve
+    return dfs_solve(*args, **kwargs)
 
 # Hybrid uniqueness: DFS up to this many nodes (~10-30 ms), then CP-SAT. Measured on the box
 # (research/zip3d_solvers.log): DFS settles most 3^3 checks; on 4^3/5^3 uniqueness proofs it
@@ -75,13 +79,13 @@ def puzzle_from_positions(n: int, path: list[int], positions, walls=()) -> ZipPu
 def count(p: ZipPuzzle, limit: int = 2, node_cap: int = UNIQUE_NODE_CAP,
           time_limit: float | None = None):
     """Hybrid counter: (count | None, solutions). DFS first, CP-SAT on abort."""
-    r = dfs_solve(p, limit=limit, max_nodes=node_cap)
+    r = _dfs_solve(p, limit=limit, max_nodes=node_cap)
     if not r.aborted:
         return r.count, r.solutions
     from .solver_cpsat import available, cpsat_count
     if not available():
         cap = int(DFS_NODES_PER_S * (time_limit if time_limit is not None else 30))
-        r = dfs_solve(p, limit=limit, max_nodes=cap)
+        r = _dfs_solve(p, limit=limit, max_nodes=cap)
         return (None if r.aborted else r.count), r.solutions
     return cpsat_count(p, limit, time_limit=time_limit)
 
@@ -161,7 +165,7 @@ def rate(p: ZipPuzzle) -> Rating:
     """0..10: 4*(1 - K/N) + 6*min(1, log10(1+nodes)/5), nodes = DFS nodes to solve + prove unique
     (deterministic neighbour order, capped at RATE_NODE_CAP)."""
     N = p.n ** 3
-    r = dfs_solve(p, limit=2, max_nodes=RATE_NODE_CAP)
+    r = _dfs_solve(p, limit=2, max_nodes=RATE_NODE_CAP)
     nodes = min(r.nodes, RATE_NODE_CAP)
     score = 4 * (1 - p.K / N) + 6 * min(1.0, math.log10(1 + nodes) / 5)
     return Rating(round(score, 2), p.K, nodes)

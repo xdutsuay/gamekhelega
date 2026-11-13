@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numba as nb
+try:
+    import numba as nb
+except ImportError as e:
+    raise ImportError(
+        "sudoku3d's DFS solver needs numba. "
+        "Install optional deps with: pip install 'gamekhelega[solvers]'"
+    ) from e
 import numpy as np
 
 from .rules import Rules

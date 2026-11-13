@@ -10,7 +10,7 @@ sudoku) and **3D Zip** (one path through every cell of an n×n×n cube, through 
 ## Quickstart
 
 ```bash
-pip install -e ".[dev]"             # Python >= 3.10
+pip install -e ".[dev]"             # Python >= 3.10; includes the solver extras
 pytest -q                           # ~47 tests, ~20 s after numba warm-up
 gamekhelega games
 gamekhelega duel configs/duel_mock_4.json        # full duel with mock players, no API key
@@ -21,6 +21,10 @@ gamekhelega duel configs/duel_mock_zip4.json     # same, 3D Zip on a 4x4x4 cube
 gamekhelega play -g zip3d -p n=3                 # 3D Zip in the terminal
 gamekhelega leaderboard                          # Elo per game, from runs/leaderboard.json
 ```
+
+The core package (engine, adapters, mock player) depends only on numpy, rich and typer.
+`numba`, `python-sat` and `ortools` are the `[solvers]` extra, needed when a built-in
+game proves uniqueness. `pip install -e ".[solvers]"` is enough if you are not running tests.
 
 A duel writes `runs/<id>/replay.jsonl` and `runs/<id>/result.json`; walk through one with
 `gamekhelega replay runs/<id> --boards`.
@@ -131,7 +135,8 @@ gamekhelega play -g zip3d -p n=3                         # moves: "+x -y +z", "g
 ```
 
 The referee proves uniqueness with a pruned depth-first search (numba) and hands hard cases to an OR-Tools
-CP-SAT model (`AddCircuit` + order constraints), so `ortools` is a core dependency. Measured on the box
+CP-SAT model (`AddCircuit` + order constraints). Both are part of the `[solvers]` extra, not the core
+install; without OR-Tools the referee falls back to a longer DFS. Measured on the box
 (`research/zip3d_gen.log`): 3³ puzzles generate in ~0.01 s, 4³ in ~5-35 s; 5³ is slow and 6³ uniqueness
 proofs can time out (counted as `undecided`), so duels default to n = 4.
 

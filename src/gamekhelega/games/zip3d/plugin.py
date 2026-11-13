@@ -17,7 +17,6 @@ from ...engine.game import CheckResult, Move, PuzzleGame
 from . import generator as gen
 from .model import (DIRS, ZipConfig, ZipPuzzle, adjacent, cell, coord_from_json, coord_to_json,
                     edge, wall_from_json, wall_to_json, xyz, _int)
-from .solver_dfs import dfs_solve
 
 
 @dataclass
@@ -107,6 +106,7 @@ class Zip3D(PuzzleGame):
         return k
 
     def solve(self, cfg, puzzle, time_limit=None):
+        from .solver_dfs import dfs_solve
         r = dfs_solve(puzzle, limit=1, max_nodes=gen.UNIQUE_NODE_CAP * 10)
         if r.count:
             return r.solutions[0]

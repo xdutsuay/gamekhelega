@@ -10,7 +10,6 @@ import numpy as np
 from ...engine.game import CheckResult, Move, PuzzleGame
 from . import generator as gen
 from .rules import VARIANTS, Rules, conflicts, is_complete_solution
-from .solver_numba import solve as nb_solve
 
 ALPHABET = "123456789ABCDEFG"  # value v -> ALPHABET[v-1]; "0" or "." = empty
 AXES = {"z": 0, "y": 1, "x": 2}  # axis name -> numpy axis of g[z, y, x]
@@ -19,6 +18,11 @@ AXES = {"z": 0, "y": 1, "x": 2}  # axis name -> numpy axis of g[z, y, x]
 def _sat(rules: Rules):
     from .solver_sat import SatSolver
     return SatSolver(rules)
+
+
+def _nb_solve(*args, **kwargs):
+    from .solver_numba import solve
+    return solve(*args, **kwargs)
 
 
 @dataclass
@@ -92,7 +96,7 @@ class Sudoku3D(PuzzleGame):
     def count_solutions(self, cfg: Rules, puzzle: np.ndarray, limit: int = 2,
                         time_limit: float | None = None) -> int | None:
         t0 = time.monotonic()
-        r = nb_solve(puzzle, cfg, limit=limit, max_nodes=gen.UNIQUE_NODE_CAP)
+        r = _nb_solve(puzzle, cfg, limit=limit, max_nodes=gen.UNIQUE_NODE_CAP)
         if not r.aborted:
             return r.count
         left = None if time_limit is None else max(0.5, time_limit - (time.monotonic() - t0))
@@ -100,7 +104,7 @@ class Sudoku3D(PuzzleGame):
         return k
 
     def solve(self, cfg: Rules, puzzle: np.ndarray, time_limit: float | None = None):
-        r = nb_solve(puzzle, cfg, limit=1, max_nodes=gen.UNIQUE_NODE_CAP * 4)
+        r = _nb_solve(puzzle, cfg, limit=1, max_nodes=gen.UNIQUE_NODE_CAP * 4)
         if r.count:
             return r.solution
         if not r.aborted:

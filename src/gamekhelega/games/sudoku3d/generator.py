@@ -8,13 +8,17 @@ import numpy as np
 
 from .construct import base_grid, random_transform
 from .rules import Rules
-from .solver_numba import solve
 
 # Hybrid uniqueness: numba DFS up to this many branch nodes, then fall back to
 # incremental SAT (research/hybrid.log: pure numba with a 20k cap aborted on dozens
 # of checks and stalled ~110 clues on 'layer'; hybrid finished every run).
 UNIQUE_NODE_CAP = 500
 RATE_NODE_CAP = 10_000  # rating saturates at 10k nodes anyway
+
+
+def _solve(*args, **kwargs):
+    from .solver_numba import solve
+    return solve(*args, **kwargs)
 
 
 def random_full_grid(rules: Rules, rng: np.random.Generator, mix_rounds: int = 3,
@@ -30,7 +34,7 @@ def random_full_grid(rules: Rules, rng: np.random.Generator, mix_rounds: int = 3
     for _ in range(mix_rounds):
         p = np.array(g, dtype=np.int8, order="C")
         p.reshape(-1)[rng.random(rules.ncells) < blank_frac] = 0
-        s = solve(p, rules, limit=1, seed=int(rng.integers(1 << 31)), max_nodes=2000)
+        s = _solve(p, rules, limit=1, seed=int(rng.integers(1 << 31)), max_nodes=2000)
         if s.count:
             g = s.solution
     return random_transform(g, rules, rng)
@@ -40,7 +44,7 @@ def is_unique(puzzle: np.ndarray, rules: Rules, node_cap: int = UNIQUE_NODE_CAP,
               sat=None, sat_time_limit: float | None = None) -> bool:
     """numba first; if it hits node_cap, ask the SAT solver (created if not given).
     A SAT timeout counts as 'not unique' (conservative)."""
-    r = solve(puzzle, rules, limit=2, max_nodes=node_cap)
+    r = _solve(puzzle, rules, limit=2, max_nodes=node_cap)
     if not r.aborted:
         return r.count == 1
     if sat is None:
@@ -94,7 +98,7 @@ def rate(puzzle: np.ndarray, rules: Rules) -> Rating:
     search is capped at RATE_NODE_CAP and an aborted search counts as the cap).
     """
     clues = int((np.asarray(puzzle) > 0).sum())
-    r = solve(puzzle, rules, limit=2, max_nodes=RATE_NODE_CAP)
+    r = _solve(puzzle, rules, limit=2, max_nodes=RATE_NODE_CAP)
     score = 4 * (1 - clues / rules.ncells) + 6 * min(1.0, float(np.log10(1 + r.nodes)) / 4)
     return Rating(clues, r.nodes, r.max_depth, round(score, 2))
 

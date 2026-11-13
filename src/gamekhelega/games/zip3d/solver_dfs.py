@@ -19,7 +19,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numba import njit
+try:
+    from numba import njit
+except ImportError as e:
+    raise ImportError(
+        "zip3d's DFS solver needs numba. "
+        "Install optional deps with: pip install 'gamekhelega[solvers]'"
+    ) from e
 
 from .model import ZipPuzzle, colour, neighbour_table
 
