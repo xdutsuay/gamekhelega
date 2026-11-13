@@ -69,6 +69,7 @@ def run_match(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig,
     ci = wilson_interval(a_wins, games)
     summary = {
         "match_id": match_id, "games": games, "game": game.name,
+        "game_config": game.config_to_json(game.parse_config(dc.game_config)),
         "players": {"a": a.id, "b": b.id},
         "a_wins": a_wins, "b_wins": b_wins, "draws": draws,
         "a_rate": round(rate, 3),
