@@ -22,6 +22,9 @@ class MockPlayer(Player):
         self.difficulty, self.make_time_budget = difficulty, make_time_budget
         self.rng = np.random.default_rng(seed)
 
+    def set_seed(self, seed) -> None:
+        self.rng = np.random.default_rng(seed)
+
     def act(self, req: Request) -> Reply:
         g = self.game
         cfg = g.parse_config(req.config)
