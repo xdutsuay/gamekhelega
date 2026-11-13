@@ -540,3 +540,59 @@ def test_match_swaps_seats_and_reports_ci(tmp_path):
                                        make_time_s=15, solve_time_s=15, seed=7,
                                        out_dir=str(tmp_path / "r2"), leaderboard=None), games=4)
     assert [d["score_a"] for d in m["duels"]] == [d["score_a"] for d in m2["duels"]]
+
+
+def test_bt_recovers_ranking_and_is_order_independent(tmp_path):
+    """A known transitive set of results should rank A > B > C with a tight CI
+    at the top, and the fit must not depend on the order of events (unlike Elo)."""
+    from gamekhelega.engine import bt, elo
+    # 20 games on each edge of A>B>C.
+    evs = ([("A", "B", 1.0)] * 20 + [("A", "C", 1.0)] * 20 + [("B", "C", 1.0)] * 20)
+    fit = bt.bootstrap(evs, n_boot=200, seed=0)
+    assert fit["A"]["rating"] > fit["B"]["rating"] > fit["C"]["rating"]
+    assert fit["A"]["lo"] <= fit["A"]["rating"] <= fit["A"]["hi"]
+    assert fit["A"]["lo"] > fit["C"]["hi"]  # clearly separated
+    assert fit["A"]["w"] == 40 and fit["C"]["l"] == 40
+
+    # Same results in two orders: BT is identical, online Elo is not.
+    upset_then_wins = [("weak", "strong", 1.0)] + [("strong", "weak", 1.0)] * 6
+    wins_then_upset = list(reversed(upset_then_wins))
+    bt1 = bt.fit(upset_then_wins)[2]
+    bt2 = bt.fit(wins_then_upset)[2]
+    assert list(bt.fit(upset_then_wins)[0]) == list(bt.fit(wins_then_upset)[0])
+    assert list(bt1) == list(bt2)
+    p1, p2 = tmp_path / "e1.json", tmp_path / "e2.json"
+    for a, b, sa in upset_then_wins:
+        elo.record(p1, "g", a, b, {1.0: "a", 0.0: "b", 0.5: "draw"}[sa])
+    for a, b, sa in wins_then_upset:
+        elo.record(p2, "g", a, b, {1.0: "a", 0.0: "b", 0.5: "draw"}[sa])
+    e1, e2 = json.loads(p1.read_text())["g"], json.loads(p2.read_text())["g"]
+    assert e1["strong"]["elo"] != e2["strong"]["elo"]
+
+
+def test_bt_reads_result_files_and_cli(tmp_path):
+    from typer.testing import CliRunner
+    from gamekhelega.cli import app
+    from gamekhelega.engine import bt
+    runs = tmp_path / "runs"
+    evs = [
+        ("20260101-000001-aaaaaa", "g", "A", "B", "a"),
+        ("20260101-000002-bbbbbb", "g", "A", "C", "a"),
+        ("20260101-000003-cccccc", "g", "B", "C", "a"),
+    ]
+    for i, (did, game, a, b, w) in enumerate(evs * 5):
+        d = runs / f"{did}-{i}"
+        d.mkdir(parents=True)
+        (d / "result.json").write_text(json.dumps({
+            "duel_id": f"{did}-{i}", "game": game,
+            "players": {"a": a, "b": b}, "winner": w,
+        }))
+    data = bt.fit_runs(runs, n_boot=50, seed=1)
+    assert data["g"]["A"]["rating"] > data["g"]["B"]["rating"] > data["g"]["C"]["rating"]
+    out = tmp_path / "bt.json"
+    r = CliRunner().invoke(app, ["elo", "bt", "--runs", str(runs), "--boots", "30",
+                                 "--out", str(out), "--game", "g"])
+    assert r.exit_code == 0, r.output
+    assert "Bradley-Terry" in r.output and "A" in r.output
+    assert json.loads(out.read_text())["g"]["A"]["w"] == 10
+
