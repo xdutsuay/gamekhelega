@@ -13,7 +13,13 @@ import itertools
 import threading
 
 import numpy as np
-from pysat.solvers import Solver
+try:
+    from pysat.solvers import Solver
+except ImportError as e:
+    raise ImportError(
+        "sudoku3d's SAT solver needs python-sat. "
+        "Install optional deps with: pip install 'gamekhelega[solvers]'"
+    ) from e
 
 from .rules import Rules
 

@@ -116,7 +116,7 @@ Empirical 9³ minima (greedy local minima, **not proven**):
 Conclusions:
 1. Numba DFS is only fast when propagation alone solves the puzzle (medium and easy). Proving uniqueness of sparse 9³ puzzles needs SAT or CP-SAT.
 2. Cold proofs on hard layer puzzles take 30-90 s with pysat and 10-27 s with CP-SAT. The duel referee default is therefore `uniqueness_time_s = 180`.
-3. Switching the referee's backend to CP-SAT (an optional `[research]` extra today) would make it about 3× faster on hard layer puzzles. It stays optional so that the base install stays light.
+3. Switching the referee's backend to CP-SAT would make it about 3× faster on hard layer puzzles. CP-SAT lives under the `[solvers]` extra (and in `research/solver_cpsat.py` for sudoku3d benches); it stays optional so the base install stays light.
 4. Layer is much harder to make sparse than symmetric (≈105 vs ≈38 clues). It is still the canonical variant because those are the owner's rules.
 
 **Difficulty rating** (`generator.rate`, 0-10): `score = 4·(1 − clues/ncells) + 6·min(1, log10(1+nodes)/4)`. Here `nodes` is the number of branch nodes the deterministic numba search needs to solve and prove uniqueness, capped at 10k (the score saturates there). Propagation-only puzzles score ≤ 4. Difficulty presets keep these fractions of cells as clues: easy 45%, medium 30%, hard = greedy to a local minimum (or until the time budget ends).

@@ -24,7 +24,13 @@ def available() -> bool:
 def cpsat_count(p: ZipPuzzle, limit: int = 2, time_limit: float | None = None,
                 workers: int = 8) -> tuple[int | None, list[list[int]]]:
     """(count capped at limit, solutions as cell lists). count None = undecided (timeout)."""
-    from ortools.sat.python import cp_model
+    try:
+        from ortools.sat.python import cp_model
+    except ImportError as e:
+        raise ImportError(
+            "zip3d's CP-SAT backend needs ortools. "
+            "Install optional deps with: pip install 'gamekhelega[solvers]'"
+        ) from e
 
     n, N = p.n, p.n ** 3
     t0 = time.monotonic()
