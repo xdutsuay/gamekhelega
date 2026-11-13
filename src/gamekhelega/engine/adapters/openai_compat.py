@@ -20,11 +20,15 @@ from email.utils import parsedate_to_datetime
 from ..protocol import SYSTEM_PROMPT, Request, extract_json, user_prompt
 from .base import Player, Reply
 
+# Cap completions so a rambling model cannot run unbounded.
+# Set max_tokens=None to send no cap. Raise it for large MAKE replies.
+DEFAULT_MAX_TOKENS = 8192
+
 
 class OpenAICompatPlayer(Player):
     def __init__(self, model: str, id: str | None = None,
                  base_url: str = "https://api.openai.com/v1", api_key_env: str | None = "OPENAI_API_KEY",
-                 temperature: float = 0.2, max_tokens: int | None = None, json_mode: bool = True,
+                 temperature: float = 0.2, max_tokens: int | None = DEFAULT_MAX_TOKENS, json_mode: bool = True,
                  retries: int = 1, extra_body: dict | None = None, extra_headers: dict | None = None,
                  backoff_base: float = 0.5):
         self.model, self.id = model, id or model
@@ -59,7 +63,7 @@ class OpenAICompatPlayer(Player):
                 return Reply(error=last_err or "timeout", raw=raw, usage=usage)
             body = {"model": self.model, "messages": msgs, "temperature": self.temperature,
                     **self.extra_body}
-            if self.max_tokens:
+            if self.max_tokens is not None:
                 body["max_tokens"] = self.max_tokens
             if json_mode:
                 body["response_format"] = {"type": "json_object"}

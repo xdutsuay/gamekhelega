@@ -34,7 +34,8 @@ spread apart, or a single slice. Givens are dark, solver-filled cells blue, empt
 
 Any OpenAI-compatible `/chat/completions` endpoint works (OpenAI, OpenRouter, Ollama, vLLM, LM Studio, ...).
 `configs/duel_llm_example.json` pits a hosted model against a local Ollama model on the full 9×9×9 cube
-(10 puzzles per side, 10 min to make, 15 min to solve):
+(10 puzzles per side, 10 min to make, 15 min to solve). The OpenAI adapter defaults to `max_tokens=8192` so a rambling reply cannot run unbounded; this example raises it to 16384 because a MAKE of ten 9×9×9 cubes is a large JSON object. Set `max_tokens` to `null` to send no cap.
+
 
 ```json
 "player_a": {"type": "openai", "id": "openai:gpt-4o-mini", "model": "gpt-4o-mini",
