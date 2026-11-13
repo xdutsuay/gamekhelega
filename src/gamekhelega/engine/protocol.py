@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Optional
 
 from .game import PuzzleGame
@@ -36,9 +36,9 @@ class Request:
     cancel: Optional[Any] = field(default=None, repr=False, compare=False)
 
     def to_json(self) -> dict:
-        d = asdict(self)
-        d.pop("cancel", None)
-        return d
+        # Build the dict ourselves: asdict() deep-copies every field, and a
+        # threading.Event on `cancel` cannot be copied.
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.name != "cancel"}
 
 
 def make_schema(game: PuzzleGame, cfg: Any, count: int) -> dict:
