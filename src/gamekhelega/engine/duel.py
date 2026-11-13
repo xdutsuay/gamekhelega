@@ -20,7 +20,7 @@ from .adapters.base import Player, Reply
 from .game import PuzzleGame
 from .protocol import make_request, solve_request
 from .scoring import score_side, winner
-from .validate import check_submission
+from .validate import check_submissions, validation_pool
 
 
 @dataclass
@@ -31,6 +31,7 @@ class DuelConfig:
     make_time_s: float = 600.0
     solve_time_s: float = 900.0
     uniqueness_time_s: float = 180.0  # 9^3 layer 105-clue puzzle: cold pysat proof took ~90 s (research/bench_layer_hard_*.log)
+    validation_workers: int | None = None  # None = min(4, cpu); 1 = in-process
     min_solve_request_s: float = 5.0   # don't send a solve request with less time than this
     seed: int = 0
     out_dir: str = "runs"
@@ -112,24 +113,26 @@ def run_duel(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig) -> dict:
     usage: dict[str, dict] = {"a": {}, "b": {}}
     futs = {k: pool.submit(_timed, p, make_request(game, cfg, dc.puzzles_per_side, dc.make_time_s))
             for k, p in sides.items()}
-    for k, f in futs.items():
-        rep, dt = f.result()
-        _add_usage(usage[k], rep.usage)
-        items = []
-        if rep.data and isinstance(rep.data.get("puzzles"), list):
-            items = rep.data["puzzles"][: dc.puzzles_per_side]
-        replay.log("make_reply", side=k, time_s=round(dt, 3), error=rep.error, n_items=len(items))
-        verdicts = []
-        for i, it in enumerate(items):
-            v = check_submission(game, cfg, it if isinstance(it, dict) else {}, dc.uniqueness_time_s)
-            pid = f"{k}{i + 1}"
-            rec = {"id": pid, "maker": k, "accepted": v.accepted, "reason": v.reason,
-                   "errors": v.errors[:5], "difficulty": v.difficulty,
-                   "puzzle": game.puzzle_to_json(cfg, v.puzzle) if v.puzzle is not None else None,
-                   "solution": game.solution_to_json(cfg, v.solution) if v.solution is not None else None}
-            replay.log("verdict", **{x: rec[x] for x in ("id", "maker", "accepted", "reason", "errors", "difficulty")})
-            verdicts.append(rec)
-        made[k] = verdicts
+    make_results = {k: f.result() for k, f in futs.items()}
+    with validation_pool(dc.validation_workers) as vpool:
+        for k, (rep, dt) in make_results.items():
+            _add_usage(usage[k], rep.usage)
+            items = []
+            if rep.data and isinstance(rep.data.get("puzzles"), list):
+                items = rep.data["puzzles"][: dc.puzzles_per_side]
+            replay.log("make_reply", side=k, time_s=round(dt, 3), error=rep.error, n_items=len(items))
+            verdicts = []
+            checks = check_submissions(game, cfg, items, dc.uniqueness_time_s,
+                                       workers=dc.validation_workers, pool=vpool)
+            for i, v in enumerate(checks):
+                pid = f"{k}{i + 1}"
+                rec = {"id": pid, "maker": k, "accepted": v.accepted, "reason": v.reason,
+                       "errors": v.errors[:5], "difficulty": v.difficulty,
+                       "puzzle": game.puzzle_to_json(cfg, v.puzzle) if v.puzzle is not None else None,
+                       "solution": game.solution_to_json(cfg, v.solution) if v.solution is not None else None}
+                replay.log("verdict", **{x: rec[x] for x in ("id", "maker", "accepted", "reason", "errors", "difficulty")})
+                verdicts.append(rec)
+            made[k] = verdicts
 
     # ---- SOLVE (both sides in parallel, each sequential over its puzzles) --
     def solve_side(k: str) -> list[dict]:

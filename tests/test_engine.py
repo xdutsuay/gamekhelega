@@ -47,6 +47,37 @@ def test_check_submission_reasons():
     assert v.reason == "bad_solution"
 
 
+def _verdict_view(g, cfg, v):
+    return {
+        "accepted": v.accepted, "reason": v.reason, "errors": v.errors,
+        "difficulty": v.difficulty,
+        "puzzle": None if v.puzzle is None else g.puzzle_to_json(cfg, v.puzzle),
+        "solution": None if v.solution is None else g.solution_to_json(cfg, v.solution),
+    }
+
+
+def test_parallel_validation_matches_sequential():
+    """A process pool must return the same verdicts, in the same order, as a
+    one-by-one loop. Each item still has its own uniqueness time cap."""
+    from gamekhelega.engine.validate import check_submission, check_submissions
+    g = get_game("sudoku3d")
+    cfg = g.parse_config({"n": 4})
+    rng = np.random.default_rng(0)
+    items = []
+    for _ in range(3):
+        puz, sol = g.generate(cfg, "medium", rng)
+        items.append({"puzzle": g.puzzle_to_json(cfg, puz), "solution": g.solution_to_json(cfg, sol)})
+    # A malformed item in the middle must stay in the middle.
+    items.insert(1, {"puzzle": "x"})
+    empty = np.zeros(cfg.shape, np.int8)
+    items.append({"puzzle": g.puzzle_to_json(cfg, empty), "solution": items[0]["solution"]})
+    seq = [check_submission(g, cfg, it, uniqueness_time_limit=5) for it in items]
+    par = check_submissions(g, cfg, items, uniqueness_time_limit=5, workers=2)
+    assert [_verdict_view(g, cfg, v) for v in par] == [_verdict_view(g, cfg, v) for v in seq]
+    assert [v.reason for v in par][1] == "malformed"
+    assert "not_unique" in [v.reason for v in par]
+
+
 def test_prompts_and_json_extraction():
     g = get_game("sudoku3d")
     cfg = g.parse_config({"n": 9})
