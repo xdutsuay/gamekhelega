@@ -22,13 +22,15 @@ def result_table(result: dict) -> Table:
 
 
 def leaderboard_table(path: str, game: str | None = None) -> Table:
+    from .elo import iter_buckets
     data = json.loads(Path(path).read_text()) if Path(path).exists() else {}
     t = Table(title=f"Leaderboard ({path})")
-    for c in ("game", "player", "elo", "w", "l", "d"):
+    for c in ("game", "size", "player", "elo", "w", "l", "d"):
         t.add_column(c)
-    for g, board in sorted(data.items()):
+    for g, game_board in sorted(data.items()):
         if game and g != game:
             continue
-        for pid, r in sorted(board.items(), key=lambda kv: -kv[1]["elo"]):
-            t.add_row(g, pid, f"{r['elo']:.1f}", str(r["w"]), str(r["l"]), str(r["d"]))
+        for size, board in iter_buckets(game_board):
+            for pid, r in sorted(board.items(), key=lambda kv: -kv[1]["elo"]):
+                t.add_row(g, size or "—", pid, f"{r['elo']:.1f}", str(r["w"]), str(r["l"]), str(r["d"]))
     return t
