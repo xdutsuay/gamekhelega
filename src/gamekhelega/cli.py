@@ -237,13 +237,15 @@ def elo_bt(runs: Path = typer.Option(Path("runs"), "--runs", help="directory of 
     from .engine import bt
     data = bt.fit_runs(runs, game=game, n_boot=boots, seed=seed)
     t = Table(title=f"Bradley-Terry ({runs})")
-    for c in ("game", "player", "rating", "lo", "hi", "w", "l", "d"):
+    for c in ("game", "size", "player", "rating", "lo", "hi", "w", "l", "d"):
         t.add_column(c)
-    for g, board in sorted(data.items()):
-        for pid, r in sorted(board.items(), key=lambda kv: -kv[1]["rating"]):
-            lo = "" if r["lo"] is None else f"{r['lo']:.1f}"
-            hi = "" if r["hi"] is None else f"{r['hi']:.1f}"
-            t.add_row(g, pid, f"{r['rating']:.1f}", lo, hi, str(r["w"]), str(r["l"]), str(r["d"]))
+    for g, sizes in sorted(data.items()):
+        for size, board in sorted(sizes.items()):
+            for pid, r in sorted(board.items(), key=lambda kv: -kv[1]["rating"]):
+                lo = "" if r["lo"] is None else f"{r['lo']:.1f}"
+                hi = "" if r["hi"] is None else f"{r['hi']:.1f}"
+                t.add_row(g, size or "—", pid, f"{r['rating']:.1f}", lo, hi,
+                          str(r["w"]), str(r["l"]), str(r["d"]))
     con.print(t)
     if out:
         out.write_text(json.dumps(data, indent=2))

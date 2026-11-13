@@ -619,13 +619,35 @@ def test_bt_reads_result_files_and_cli(tmp_path):
             "players": {"a": a, "b": b}, "winner": w,
         }))
     data = bt.fit_runs(runs, n_boot=50, seed=1)
-    assert data["g"]["A"]["rating"] > data["g"]["B"]["rating"] > data["g"]["C"]["rating"]
+    assert data["g"][""]["A"]["rating"] > data["g"][""]["B"]["rating"] > data["g"][""]["C"]["rating"]
     out = tmp_path / "bt.json"
     r = CliRunner().invoke(app, ["elo", "bt", "--runs", str(runs), "--boots", "30",
                                  "--out", str(out), "--game", "g"])
     assert r.exit_code == 0, r.output
     assert "Bradley-Terry" in r.output and "A" in r.output
-    assert json.loads(out.read_text())["g"]["A"]["w"] == 10
+    assert json.loads(out.read_text())["g"][""]["A"]["w"] == 10
+
+
+def test_bt_ratings_are_per_game_and_size(tmp_path):
+    """A wins every n=4 duel and loses every n=9 duel. Pooled by game only,
+    the two would cancel; bucketed by size, A is ahead at n=4 and behind at n=9."""
+    from gamekhelega.engine import bt
+    from gamekhelega.engine.elo import size_key
+    runs = tmp_path / "runs"
+    s4, s9 = size_key({"n": 4}), size_key({"n": 9})
+    for i in range(8):
+        for n, winner in ((4, "a"), (9, "b")):
+            d = runs / f"{n}-{i}"
+            d.mkdir(parents=True)
+            (d / "result.json").write_text(json.dumps({
+                "duel_id": f"d-{n}-{i}", "game": "sudoku3d",
+                "game_config": {"n": n},
+                "players": {"a": "A", "b": "B"}, "winner": winner,
+            }))
+    data = bt.fit_runs(runs, n_boot=40, seed=0)
+    assert data["sudoku3d"][s4]["A"]["rating"] > data["sudoku3d"][s4]["B"]["rating"]
+    assert data["sudoku3d"][s9]["A"]["rating"] < data["sudoku3d"][s9]["B"]["rating"]
+    assert data["sudoku3d"][s4]["A"]["w"] == 8 and data["sudoku3d"][s9]["A"]["l"] == 8
 
 
 def test_elo_keys_by_size_and_reads_legacy(tmp_path):

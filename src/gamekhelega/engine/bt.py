@@ -5,6 +5,9 @@ order, produces different ratings. Bradley-Terry fits one strength per
 player to all the results at once (MM iterations, Hunter 2004) and a
 bootstrap gives a confidence interval. The rating is reported on the
 Elo scale (1500 + 400·log10(π_i / geomean(π))) so the two can be compared.
+
+Events are bucketed by game and size (the same unit as the Elo leaderboard).
+A 4-cube result and a 9-cube result do not share a rating.
 """
 from __future__ import annotations
 
@@ -12,6 +15,8 @@ import json
 from pathlib import Path
 
 import numpy as np
+
+from .elo import size_key
 
 BASE = 1500.0
 
@@ -93,9 +98,17 @@ def bootstrap(events: list[tuple[str, str, float]], n_boot: int = 400,
     return out
 
 
-def events_from_runs(runs_dir: str | Path, game: str | None = None) -> dict[str, list[tuple[str, str, float]]]:
-    """Collect (a, b, score_a) events from result.json, then match-*.json (skipping duplicate duel ids)."""
+def events_from_runs(runs_dir: str | Path, game: str | None = None
+                     ) -> dict[str, dict[str, list[tuple[str, str, float]]]]:
+    """Collect (a, b, score_a) events from result.json, then match-*.json
+    (skipping duplicate duel ids), bucketed by game and size_key(game_config)."""
     root, by_game, seen = Path(runs_dir), {}, set()
+
+    def add(g: str, cfg: dict | None, a: str, b: str, sa: float, did: str | None) -> None:
+        by_game.setdefault(g, {}).setdefault(size_key(cfg), []).append((a, b, sa))
+        if did:
+            seen.add(did)
+
     for path in root.rglob("result.json"):
         ev = json.loads(path.read_text())
         g = ev.get("game") or ""
@@ -106,9 +119,7 @@ def events_from_runs(runs_dir: str | Path, game: str | None = None) -> dict[str,
         if w not in {"a", "b", "draw"} or "a" not in players or "b" not in players:
             continue
         sa = {"a": 1.0, "b": 0.0, "draw": 0.5}[w]
-        by_game.setdefault(g, []).append((players["a"], players["b"], sa))
-        if ev.get("duel_id"):
-            seen.add(ev["duel_id"])
+        add(g, ev.get("game_config"), players["a"], players["b"], sa, ev.get("duel_id"))
     for path in root.rglob("match-*.json"):
         m = json.loads(path.read_text())
         g = m.get("game") or ""
@@ -120,14 +131,12 @@ def events_from_runs(runs_dir: str | Path, game: str | None = None) -> dict[str,
                 continue
             if "score_a" not in d or "a" not in names or "b" not in names:
                 continue
-            by_game.setdefault(g, []).append((names["a"], names["b"], float(d["score_a"])))
-            if d.get("duel_id"):
-                seen.add(d["duel_id"])
+            add(g, m.get("game_config"), names["a"], names["b"], float(d["score_a"]), d.get("duel_id"))
     return by_game
 
 
 def fit_runs(runs_dir: str | Path, game: str | None = None, n_boot: int = 400,
              seed: int = 0) -> dict[str, dict]:
-    """{game: {player: {rating, lo, hi, w, l, d}}}."""
-    return {g: bootstrap(evs, n_boot=n_boot, seed=seed)
-            for g, evs in events_from_runs(runs_dir, game).items()}
+    """{game: {size: {player: {rating, lo, hi, w, l, d}}}}."""
+    return {g: {size: bootstrap(evs, n_boot=n_boot, seed=seed) for size, evs in buckets.items()}
+            for g, buckets in events_from_runs(runs_dir, game).items()}
