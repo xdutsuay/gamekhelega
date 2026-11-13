@@ -89,6 +89,48 @@ def test_mock_duel_end_to_end(tmp_path):
     assert json.loads((tmp_path / "lb.json").read_text())["sudoku3d"]["strong"]["w"] == 1
 
 
+def _stable_duel(res: dict) -> dict:
+    """Drop id and timings so two seeded runs can be compared."""
+    puzzles = {
+        k: [{kk: vv for kk, vv in rec.items()} for rec in recs]
+        for k, recs in res["puzzles"].items()
+    }
+    solves = {
+        k: [{kk: vv for kk, vv in r.items() if kk != "time_s"} for r in recs]
+        for k, recs in res["solves"].items()
+    }
+    scores = {
+        k: {kk: vv for kk, vv in s.items() if kk not in ("solve_time_s", "solve_pts", "total")}
+        for k, s in res["scores"].items()
+    }
+    return {"winner": res["winner"], "puzzles": puzzles, "solves": solves, "scores": scores}
+
+
+def test_duel_seed_is_reproducible(tmp_path):
+    """The same DuelConfig.seed must produce the same puzzles, verdicts and scores."""
+    g = get_game("sudoku3d")
+
+    def once(folder):
+        dc = DuelConfig(game="sudoku3d", game_config={"n": 4}, puzzles_per_side=2,
+                        make_time_s=20, solve_time_s=20, seed=123,
+                        out_dir=str(folder), leaderboard=None)
+        a = make_player({"type": "mock", "id": "a", "skill": 0.5, "difficulty": "medium", "seed": 1}, g)
+        b = make_player({"type": "mock", "id": "b", "skill": 0.5, "bad_make": 0.3, "seed": 2}, g)
+        return run_duel(g, a, b, dc)
+
+    r1, r2 = once(tmp_path / "r1"), once(tmp_path / "r2")
+    assert r1["duel_id"] != r2["duel_id"]
+    assert _stable_duel(r1) == _stable_duel(r2)
+    # A different seed should change the puzzles (otherwise the seed still isn't doing anything).
+    dc = DuelConfig(game="sudoku3d", game_config={"n": 4}, puzzles_per_side=2,
+                    make_time_s=20, solve_time_s=20, seed=999,
+                    out_dir=str(tmp_path / "r3"), leaderboard=None)
+    a = make_player({"type": "mock", "id": "a", "skill": 0.5, "difficulty": "medium", "seed": 1}, g)
+    b = make_player({"type": "mock", "id": "b", "skill": 0.5, "bad_make": 0.3, "seed": 2}, g)
+    r3 = run_duel(g, a, b, dc)
+    assert _stable_duel(r1)["puzzles"] != _stable_duel(r3)["puzzles"]
+
+
 def test_command_adapter(tmp_path):
     bot = tmp_path / "bot.py"
     bot.write_text("import json,sys; r=json.load(sys.stdin); print(json.dumps({'echo': r['phase']}))")

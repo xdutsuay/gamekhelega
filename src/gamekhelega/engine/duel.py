@@ -80,6 +80,11 @@ def _timed(pool, player: Player, req) -> tuple[Reply, float]:
 
 def run_duel(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig) -> dict:
     cfg = game.parse_config(dc.game_config)
+    # Independent streams from the duel seed, so the same config can be replayed.
+    # Player-spec seeds (used when a MockPlayer is built) are overwritten here.
+    child_a, child_b = np.random.SeedSequence(dc.seed).spawn(2)
+    a.set_seed(child_a)
+    b.set_seed(child_b)
     duel_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     out = Path(dc.out_dir) / duel_id
     replay = Replay(out / "replay.jsonl")

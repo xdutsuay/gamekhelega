@@ -26,6 +26,10 @@ class Player(ABC):
         """Blocking call. Must try to return within req.time_limit_s; the referee
         enforces the limit regardless (late replies are discarded)."""
 
+    def set_seed(self, seed) -> None:
+        """Optional: the referee calls this with a seed derived from DuelConfig.seed
+        so a duel can be replayed. Players that don't use RNG can ignore it."""
+
     def close(self) -> None:  # optional cleanup
         pass
 
