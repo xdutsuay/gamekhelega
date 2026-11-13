@@ -249,19 +249,36 @@ The referee measures time. Each call runs in a daemon thread and is abandoned af
 
 ## 11. Scoring (`engine/scoring.py`)
 
-Per side, with c = 1 if correct, p = partial ∈ [0,1], d = difficulty ∈ [0,10]:
+Weights live in `ScoringWeights` and can be overridden in the duel JSON:
+
+```json
+"scoring": {"invalid": 20, "walkover": 8}
+```
+
+Unset keys keep the defaults below. Per side, with c = 1 if correct, p = partial ∈ [0,1], d = difficulty ∈ [0,10]:
 
 ```
-solve_pts    = Σ_attempted [10·c + 3·(1−c)·p]  +  5 · n_correct · (1 − solve_time_used / solve_time_s)
-make_pts     = Σ_own accepted [6·[opponent tried and failed] + 4·d/10]  −  15 · n_own_rejected_or_missing
-walkover_pts = 10 · n_opponent_rejected_or_missing     (you couldn't solve what they never validly gave)
+solve_pts    = Σ_attempted [solve·c + partial·(1−c)·p]  +  speed · n_correct · (1 − solve_time_used / solve_time_s)
+make_pts     = Σ_own accepted [stump·[opponent tried and failed] + difficulty·d/10]  −  invalid · n_own_rejected_or_missing
+walkover_pts = walkover · n_opponent_rejected_or_missing     (you couldn't solve what they never validly gave)
 total        = solve_pts + make_pts + walkover_pts
 ```
+
+Default weights and what they encode:
+
+- **solve (10).** Points for a correct solution. This is the main prize: correctness dominates.
+- **partial (3).** Consolation for an incorrect attempt, scaled by the game's partial credit in [0,1]. Always less than a full solve.
+- **speed (5).** Bonus only when you are correct, scaled by the unused fraction of the solve budget. A slow correct answer still beats a fast wrong one, because the bonus cannot exceed `solve`.
+- **stump (6).** Bonus for a valid puzzle the opponent tried and failed. Less than `solve`, so "make impossible puzzles" is not a winning strategy by itself.
+- **difficulty (4).** Maximum bonus for a hard valid puzzle (`× d/10`). A max-difficulty stump (`stump + difficulty` = 10) is still worth less than the invalid penalty.
+- **invalid (15).** Penalty per own rejected or missing puzzle. Strictly larger than a max-difficulty stump, so an invalid submission is worse than any valid one.
+- **walkover (10).** Compensation to you for each opponent puzzle you could not be tested on (they never validly gave it). Together with `invalid`, an invalid costs the maker 15 and gives the opponent 10, which is strictly worse than submitting an easy valid puzzle.
+
+These inequalities on the defaults (`stump < solve`, `partial < solve`, `0 < speed < solve`, `difficulty < solve`, `invalid > stump + difficulty`, `walkover < invalid`) are checked by a property test. Changing a default without updating the test is a policy change, not a typo.
+
 Winner = higher total. Ties are broken by more correct solves, then less solve time, then fewer rejected puzzles, then a draw.
 
-`opponent tried and failed` is true only when the opponent actually started the puzzle and got it wrong. If they never started it (the shared solve budget ran out), `opponent_correct` is `None`: the maker still gets the difficulty points for a valid puzzle, but not the +6 stump. Otherwise a side could farm stump points by running the opponent's clock down rather than by writing hard puzzles. A skipped puzzle is also not counted as an attempt on the solver's side.
-
-Why: correctness dominates. Speed is a bonus only when you are correct. Making a puzzle that stumps the opponent is worth less than solving one (+6 vs +10), so "make impossible puzzles" is not a winning strategy. An invalid puzzle costs −15 for the maker and gives +10 to the opponent, so it is strictly worse than submitting an easy valid puzzle.
+`opponent tried and failed` is true only when the opponent actually started the puzzle and got it wrong. If they never started it (the shared solve budget ran out), `opponent_correct` is `None`: the maker still gets the difficulty points for a valid puzzle, but not the stump bonus. Otherwise a side could farm stump points by running the opponent's clock down rather than by writing hard puzzles. A skipped puzzle is also not counted as an attempt on the solver's side.
 
 **Elo** (`engine/elo.py`): K=32, start 1500, stored per game: `{game: {player_id: {elo, w, l, d}}}`.
 
