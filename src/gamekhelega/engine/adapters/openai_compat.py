@@ -9,11 +9,13 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import random
 import threading
 import time
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
+from email.utils import parsedate_to_datetime
 
 from ..protocol import SYSTEM_PROMPT, Request, extract_json, user_prompt
 from .base import Player, Reply
@@ -23,12 +25,15 @@ class OpenAICompatPlayer(Player):
     def __init__(self, model: str, id: str | None = None,
                  base_url: str = "https://api.openai.com/v1", api_key_env: str | None = "OPENAI_API_KEY",
                  temperature: float = 0.2, max_tokens: int | None = None, json_mode: bool = True,
-                 retries: int = 1, extra_body: dict | None = None, extra_headers: dict | None = None):
+                 retries: int = 1, extra_body: dict | None = None, extra_headers: dict | None = None,
+                 backoff_base: float = 0.5):
         self.model, self.id = model, id or model
         self.base_url = base_url.rstrip("/")
         self.api_key = os.environ.get(api_key_env, "") if api_key_env else ""
         self.temperature, self.max_tokens, self.json_mode = temperature, max_tokens, json_mode
         self.retries, self.extra_body, self.extra_headers = retries, extra_body or {}, extra_headers or {}
+        self.backoff_base = backoff_base
+        self._rng = random.Random()
 
     def _post(self, body: dict, timeout: float, cancel: threading.Event | None = None) -> dict:
         headers = {"Content-Type": "application/json", **self.extra_headers}
@@ -45,29 +50,43 @@ class OpenAICompatPlayer(Player):
                 {"role": "user", "content": user_prompt(req)}]
         usage: dict = {}
         last_err, raw = "", ""
+        # Local to this call: a 400 from response_format must not flip the player
+        # for every later request.
+        json_mode = self.json_mode
         for attempt in range(self.retries + 1):
             remaining = deadline - time.monotonic()
-            if remaining <= 1:
+            if remaining <= 1 or (req.cancel is not None and req.cancel.is_set()):
                 return Reply(error=last_err or "timeout", raw=raw, usage=usage)
             body = {"model": self.model, "messages": msgs, "temperature": self.temperature,
                     **self.extra_body}
             if self.max_tokens:
                 body["max_tokens"] = self.max_tokens
-            if self.json_mode:
+            if json_mode:
                 body["response_format"] = {"type": "json_object"}
             try:
                 resp = self._post(body, timeout=remaining, cancel=req.cancel)
             except urllib.error.HTTPError as e:
-                last_err = f"http {e.code}: {e.read()[:300]!r}"
-                if e.code == 400 and self.json_mode:  # some servers reject response_format
-                    self.json_mode = False
-                continue
+                raw_body = e.read()
+                _merge_usage(usage, _usage_from_body(raw_body))
+                last_err = f"http {e.code}: {raw_body[:300]!r}"
+                if e.code == 400 and json_mode:  # some servers reject response_format
+                    json_mode = False
+                    continue
+                if _transient(e.code) and attempt < self.retries:
+                    delay = _backoff_delay(attempt, e.headers.get("Retry-After"),
+                                           self.backoff_base, self._rng)
+                    if _wait(delay, deadline, req.cancel):
+                        continue
+                break  # 401 and other 4xx, or no time left to back off
             except Exception as e:  # timeout, connection refused...
                 last_err = f"{type(e).__name__}: {e}"
-                continue
-            for k, v in (resp.get("usage") or {}).items():
-                if isinstance(v, (int, float)):
-                    usage[k] = usage.get(k, 0) + v
+                if attempt < self.retries and _wait(
+                    _backoff_delay(attempt, None, self.backoff_base, self._rng),
+                    deadline, req.cancel,
+                ):
+                    continue
+                break
+            _merge_usage(usage, resp.get("usage"))
             try:
                 raw = resp["choices"][0]["message"]["content"] or ""
                 return Reply(data=extract_json(raw, schema=req.output_schema), raw=raw[:4000], usage=usage)
@@ -79,6 +98,67 @@ class OpenAICompatPlayer(Player):
                                     "object matching the schema. Reply with the JSON object only."}]
         return Reply(error=last_err, raw=raw[:4000], usage=usage)
 
+
+
+def _transient(code: int) -> bool:
+    """429 and 5xx are worth retrying. 401 and other 4xx are not."""
+    return code == 429 or code >= 500
+
+
+def _merge_usage(acc: dict, u: dict | None) -> None:
+    for k, v in (u or {}).items():
+        if isinstance(v, (int, float)):
+            acc[k] = acc.get(k, 0) + v
+
+
+def _usage_from_body(raw: bytes) -> dict:
+    try:
+        data = json.loads(raw.decode() or "{}")
+    except (ValueError, UnicodeDecodeError):
+        return {}
+    return data.get("usage") or {} if isinstance(data, dict) else {}
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        dt = parsedate_to_datetime(value)
+        return max(0.0, dt.timestamp() - time.time())
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _backoff_delay(attempt: int, retry_after: str | None, base: float,
+                   rng: random.Random) -> float:
+    """Retry-After wins when present; otherwise exponential backoff with full jitter."""
+    parsed = _parse_retry_after(retry_after)
+    if parsed is not None:
+        return min(30.0, parsed)
+    return rng.uniform(0.0, min(30.0, base * (2 ** attempt)))
+
+
+def _wait(delay: float, deadline: float, cancel: threading.Event | None) -> bool:
+    """Sleep up to `delay`, but leave 1s for the next attempt. False = do not retry."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 1:
+        return False
+    delay = min(max(0.0, delay), remaining - 1)
+    if delay <= 0:
+        return False
+    end = time.monotonic() + delay
+    while True:
+        if cancel is not None and cancel.is_set():
+            return False
+        left = end - time.monotonic()
+        if left <= 0:
+            return True
+        time.sleep(min(0.05, left))
 
 @contextmanager
 def _urlopen(req: urllib.request.Request, timeout: float, cancel: threading.Event | None):

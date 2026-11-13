@@ -247,6 +247,86 @@ def test_openai_adapter_against_fake_server():
     assert rep.data == {"solution": None} and rep.usage["prompt_tokens"] == 7
 
 
+def _openai_scripted_server(script):
+    """HTTP server that walks a list of (status, headers, body) responses."""
+    import http.server, threading
+    hits = {"n": 0, "bodies": []}
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            raw = self.rfile.read(int(self.headers["Content-Length"]))
+            hits["bodies"].append(json.loads(raw))
+            i = min(hits["n"], len(script) - 1)
+            hits["n"] += 1
+            status, headers, body = script[i]
+            data = body if isinstance(body, bytes) else json.dumps(body).encode()
+            self.send_response(status)
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, hits
+
+
+def test_openai_retries_backoff_and_keeps_usage():
+    """401 is not retried; 429 backs off (Retry-After) and usage from every attempt is kept.
+    A 400 json_mode fallback must not permanently flip the player."""
+    import time
+    from gamekhelega.engine.adapters.openai_compat import OpenAICompatPlayer
+
+    ok = {"choices": [{"message": {"content": '{"solution": null}'}}],
+          "usage": {"prompt_tokens": 7, "completion_tokens": 3}}
+    g = get_game("sudoku3d")
+    req = solve_request(g, g.parse_config({"n": 4}), "a1", {"layers": []}, 10)
+
+    # 401 is a dead end: retries=3 must still hit the server once.
+    srv, hits = _openai_scripted_server([
+        (401, {}, {"error": {"message": "nope"}, "usage": {"prompt_tokens": 2}}),
+    ])
+    p = OpenAICompatPlayer(model="fake", base_url=f"http://127.0.0.1:{srv.server_port}/v1",
+                           api_key_env=None, retries=3)
+    rep = p.act(req)
+    srv.shutdown()
+    assert hits["n"] == 1 and "401" in rep.error
+    assert rep.usage["prompt_tokens"] == 2
+
+    # 429 then 200: honour Retry-After, add usage from both attempts.
+    srv, hits = _openai_scripted_server([
+        (429, {"Retry-After": "0.3"}, {"error": "slow down", "usage": {"prompt_tokens": 5}}),
+        (200, {}, ok),
+    ])
+    p = OpenAICompatPlayer(model="fake", base_url=f"http://127.0.0.1:{srv.server_port}/v1",
+                           api_key_env=None, retries=2)
+    t0 = time.monotonic()
+    rep = p.act(req)
+    dt = time.monotonic() - t0
+    srv.shutdown()
+    assert rep.data == {"solution": None}
+    assert hits["n"] == 2
+    assert dt >= 0.3
+    assert rep.usage["prompt_tokens"] == 12 and rep.usage["completion_tokens"] == 3
+
+    # 400 on json_mode: retry immediately without response_format, do not flip the player.
+    srv, hits = _openai_scripted_server([
+        (400, {}, {"error": "no json_object"}),
+        (200, {}, ok),
+    ])
+    p = OpenAICompatPlayer(model="fake", base_url=f"http://127.0.0.1:{srv.server_port}/v1",
+                           api_key_env=None, retries=1, json_mode=True)
+    rep = p.act(req)
+    srv.shutdown()
+    assert p.json_mode is True
+    assert "response_format" in hits["bodies"][0] and "response_format" not in hits["bodies"][1]
+    assert rep.data == {"solution": None}
+
+
 def test_openai_timeout_cancels_http_request():
     """A slow server must be disconnected near the deadline, not left running.
 
