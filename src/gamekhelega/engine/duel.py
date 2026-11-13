@@ -9,7 +9,7 @@ import json
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,7 @@ from . import elo
 from .adapters.base import Player, Reply
 from .game import PuzzleGame
 from .protocol import make_request, solve_request
-from .scoring import score_side, winner
+from .scoring import ScoringWeights, score_side, winner
 from .validate import check_submissions, validation_pool
 
 
@@ -36,10 +36,14 @@ class DuelConfig:
     seed: int = 0
     out_dir: str = "runs"
     leaderboard: str | None = "runs/leaderboard.json"
+    scoring: ScoringWeights = field(default_factory=ScoringWeights)
 
     @classmethod
     def from_dict(cls, d: dict) -> "DuelConfig":
         known = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+        raw = known.get("scoring")
+        if isinstance(raw, dict) or raw is None:
+            known["scoring"] = ScoringWeights.from_dict(raw)
         return cls(**known)
 
 
@@ -105,7 +109,7 @@ def run_duel(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig) -> dict:
     replay = Replay(out / "replay.jsonl")
     sides = {"a": a, "b": b}
     replay.log("start", duel_id=duel_id, game=game.name, config=game.config_to_json(cfg),
-               players={k: p.id for k, p in sides.items()}, duel=dc.__dict__)
+               players={k: p.id for k, p in sides.items()}, duel=asdict(dc))
     pool = cf.ThreadPoolExecutor(max_workers=4)
 
     # ---- MAKE (parallel) ------------------------------------------------
@@ -183,11 +187,12 @@ def run_duel(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig) -> dict:
         own = [{"accepted": m["accepted"], "difficulty": m["difficulty"],
                 "opponent_correct": opp_correct.get(m["id"])} for m in made[k]]
         opp_rej = dc.puzzles_per_side - sum(1 for m in made[opp] if m["accepted"])
-        scores[k] = score_side(solves[k], own, dc.puzzles_per_side, opp_rej, dc.solve_time_s)
+        scores[k] = score_side(solves[k], own, dc.puzzles_per_side, opp_rej, dc.solve_time_s,
+                             weights=dc.scoring)
     w = winner(scores["a"], scores["b"])
     result = {
         "duel_id": duel_id, "game": game.name, "game_config": game.config_to_json(cfg),
-        "duel_config": dc.__dict__, "players": {k: p.id for k, p in sides.items()},
+        "duel_config": asdict(dc), "players": {k: p.id for k, p in sides.items()},
         "puzzles": made, "solves": solves, "usage": usage,
         "scores": {k: s.to_json() for k, s in scores.items()},
         "winner": w, "winner_id": sides[w].id if w in sides else None,

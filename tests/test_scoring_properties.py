@@ -8,8 +8,10 @@ from __future__ import annotations
 import pytest
 from hypothesis import given, strategies as st
 
+from gamekhelega.engine.duel import DuelConfig
 from gamekhelega.engine.scoring import (
-    W_DIFF, W_INVALID, W_STUMP, W_WALKOVER, SideScore, score_side, winner,
+    DEFAULT_WEIGHTS, ScoringWeights, W_DIFF, W_INVALID, W_STUMP, W_WALKOVER,
+    SideScore, score_side, winner,
 )
 
 
@@ -93,4 +95,43 @@ def test_unattempted_puzzle_is_not_a_stump(difficulty):
 def test_unattempted_solve_is_not_an_attempt():
     s = score_side([{"correct": None, "partial": 0.0, "time_s": 0.0}], [], 1, 0, 100)
     assert s.n_attempted == 0 and s.n_correct == 0 and s.solve_pts == 0
+
+
+def test_default_ordering_invariants():
+    """The DESIGN §11 'Why' paragraph, as inequalities on the default weights."""
+    w = ScoringWeights()
+    assert w == DEFAULT_WEIGHTS
+    assert w.stump < w.solve
+    assert w.partial < w.solve
+    assert 0 < w.speed < w.solve
+    assert w.difficulty < w.solve
+    assert w.invalid > w.stump + w.difficulty
+    assert w.walkover < w.invalid
+
+
+@given(
+    difficulty=st.floats(0, 10, allow_nan=False, allow_infinity=False),
+    stumped=st.booleans(),
+)
+def test_defaults_any_valid_beats_an_invalid(difficulty, stumped):
+    """Under the defaults, an invalid submission scores worse than any valid one."""
+    w = ScoringWeights()
+    valid = score_side(
+        [], [{"accepted": True, "difficulty": difficulty,
+              "opponent_correct": False if stumped else True}],
+        1, 0, 100, weights=w,
+    )
+    invalid = score_side([], [{"accepted": False, "difficulty": 0}], 1, 0, 100, weights=w)
+    assert invalid.make_pts < valid.make_pts
+    assert valid.make_pts <= w.stump + w.difficulty + 1e-9
+
+
+def test_duel_config_overrides_scoring_weights():
+    dc = DuelConfig.from_dict({"game": "sudoku3d", "scoring": {"invalid": 20, "walkover": 8}})
+    assert dc.scoring.invalid == 20 and dc.scoring.walkover == 8
+    assert dc.scoring.solve == ScoringWeights().solve
+    assert DuelConfig.from_dict({"game": "x"}).scoring == ScoringWeights()
+    custom = ScoringWeights(invalid=1.0, stump=0.0, difficulty=0.0)
+    assert score_side([], [{"accepted": False, "difficulty": 0}], 1, 0, 100,
+                      weights=custom).make_pts == pytest.approx(-1.0)
 
