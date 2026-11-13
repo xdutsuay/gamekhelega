@@ -74,6 +74,32 @@ def test_elo(tmp_path):
     assert board["p"]["d"] == 1
 
 
+def test_elo_concurrent_writes_lose_no_updates(tmp_path):
+    """Many writers at once must all land: wins + losses add up, file stays valid JSON."""
+    import threading
+    path = tmp_path / "lb.json"
+    n = 40
+    errors = []
+
+    def one():
+        try:
+            elo.record(path, "g", "p", "q", "a")
+        except Exception as e:  # noqa: BLE001 — collect and fail after join
+            errors.append(e)
+
+    threads = [threading.Thread(target=one) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, errors
+    board = json.loads(path.read_text())["g"]
+    assert board["p"]["w"] == n and board["q"]["l"] == n
+    assert board["p"]["l"] == 0 and board["q"]["w"] == 0
+    assert not list(tmp_path.glob("*.tmp.*"))
+    assert not list(tmp_path.glob("*.lock"))
+
+
 def test_mock_duel_end_to_end(tmp_path):
     g = get_game("sudoku3d")
     dc = DuelConfig(game="sudoku3d", game_config={"n": 4}, puzzles_per_side=3, make_time_s=30,
