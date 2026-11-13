@@ -56,10 +56,16 @@ class Replay:
         self.f.close()
 
 
-def _timed(pool, player: Player, req) -> tuple[Reply, float]:
-    """Run player.act in its own daemon thread with a hard wall-clock limit.
-    Late = error 'timeout' (the straggler thread is abandoned, never awaited)."""
+def _timed(player: Player, req) -> tuple[Reply, float]:
+    """Run player.act in a thread. At the deadline, set req.cancel and wait
+    briefly so the adapter can close its socket or kill its subprocess and
+    hand back any usage it already has. Abandoning the thread (the old
+    behaviour) left HTTP requests running — and being billed — in the
+    background.
+    """
     box: dict = {}
+    cancel = threading.Event()
+    req.cancel = cancel
 
     def run() -> None:
         try:
@@ -70,11 +76,19 @@ def _timed(pool, player: Player, req) -> tuple[Reply, float]:
     t0 = time.monotonic()
     th = threading.Thread(target=run, daemon=True)
     th.start()
-    th.join(req.time_limit_s + 1.0)  # 1 s grace for transport
+    th.join(req.time_limit_s)
+    timed_out = th.is_alive()
+    if timed_out:
+        cancel.set()
+        th.join(1.0)  # grace: let the adapter stop and report usage
     rep = box.get("rep") or Reply(error="timeout")
     dt = time.monotonic() - t0
-    if dt > req.time_limit_s + 1.0:
-        rep = Reply(error="timeout", raw=rep.raw, usage=rep.usage)
+    if timed_out:
+        usage = dict(rep.usage or {})
+        usage["cancelled"] = usage.get("cancelled", 0) + 1
+        if any(k in usage for k in ("prompt_tokens", "completion_tokens", "total_tokens")):
+            usage["late"] = 1
+        rep = Reply(error="timeout", raw=rep.raw, usage=usage)
     return rep, dt
 
 
@@ -96,7 +110,7 @@ def run_duel(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig) -> dict:
     # ---- MAKE (parallel) ------------------------------------------------
     made: dict[str, list[dict]] = {}
     usage: dict[str, dict] = {"a": {}, "b": {}}
-    futs = {k: pool.submit(_timed, pool, p, make_request(game, cfg, dc.puzzles_per_side, dc.make_time_s))
+    futs = {k: pool.submit(_timed, p, make_request(game, cfg, dc.puzzles_per_side, dc.make_time_s))
             for k, p in sides.items()}
     for k, f in futs.items():
         rep, dt = f.result()
@@ -132,7 +146,7 @@ def run_duel(game: PuzzleGame, a: Player, b: Player, dc: DuelConfig) -> dict:
                 results.append(r)
                 continue
             req = solve_request(game, cfg, rec["id"], rec["puzzle"], left)
-            rep, dt = _timed(pool, player, req)
+            rep, dt = _timed(player, req)
             _add_usage(usage[k], rep.usage)
             spent += dt
             r["time_s"] = round(dt, 3)

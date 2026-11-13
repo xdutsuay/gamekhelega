@@ -20,6 +20,7 @@ class CommandPlayer(Player):
 
     def act(self, req: Request) -> Reply:
         try:
+            # timeout= kills the child; Request.to_json() omits req.cancel
             p = subprocess.run(self.cmd, input=json.dumps(req.to_json()), capture_output=True,
                                text=True, timeout=req.time_limit_s, cwd=self.cwd, env=self.env)
         except subprocess.TimeoutExpired:
