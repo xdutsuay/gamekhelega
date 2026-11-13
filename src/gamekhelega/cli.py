@@ -141,6 +141,37 @@ def duel(duel_config: Path = typer.Argument(..., help="duel JSON (see configs/)"
     con.print(f"results: {res['out_dir']}/result.json  replay: {res['out_dir']}/replay.jsonl")
 
 
+@app.command("match")
+def match_cmd(duel_config: Path = typer.Argument(..., help="duel JSON (see configs/)"),
+              games: int = typer.Option(5, "--games", "-n", help="duels to run (seats swap each game)"),
+              a: Optional[str] = typer.Option(None, help="override player A spec (JSON)"),
+              b: Optional[str] = typer.Option(None, help="override player B spec (JSON)"),
+              game: Optional[str] = typer.Option(None, "--game", "-g", help="override game")):
+    """Run a best-of-N match: swap seats, vary seeds, print a win rate with a 95% CI."""
+    from rich.table import Table
+    from .engine.adapters.base import make_player
+    from .engine.duel import DuelConfig
+    from .engine.match import run_match
+
+    d = json.loads(duel_config.read_text())
+    if game:
+        d["game"] = game
+    dc = DuelConfig.from_dict(d)
+    g = get_game(dc.game)
+    pa = make_player(json.loads(a) if a else d["player_a"], g)
+    pb = make_player(json.loads(b) if b else d["player_b"], g)
+    m = run_match(g, pa, pb, dc, games=games)
+    t = Table(title=f"{m['game']} match {m['match_id']}  {m['games']} games")
+    t.add_column("side"); t.add_column("player"); t.add_column("wins", justify="right")
+    t.add_row("a", m["players"]["a"], str(m["a_wins"]))
+    t.add_row("b", m["players"]["b"], str(m["b_wins"]))
+    t.add_row("", "draws", str(m["draws"]))
+    con.print(t)
+    con.print(f"A's score rate (wins + 0.5·draws) / n = {m['a_rate']:.3f}  "
+              f"Wilson 95% CI on A's win rate: [{m['ci95'][0]:.3f}, {m['ci95'][1]:.3f}]")
+    con.print(f"summary: {m['out']}")
+
+
 @app.command()
 def view(pack_file: Path, index: int = 0, html: Optional[Path] = None, solution: bool = False,
          game: Optional[str] = typer.Option(None, "--game", "-g", help="override pack's game")):
